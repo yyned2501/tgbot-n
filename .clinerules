@@ -1,0 +1,74 @@
+# Telegram 人形脚本 (Userbot) 开发规范
+
+这是本项目的总则，AI 在进行任何代码修改或新功能开发时必须严格遵守。
+
+## 1. 核心库引用规范
+- **严禁直接引用**: 禁止在 `core` 包以外的任何文件中直接 `import pyrogram`。
+- **统一入口**: 必须通过 `core` 模块引用所有 Telegram 相关组件、配置和日志工具。
+  - 正确做法: `from core import Client, filters, Message, logger, ...`
+  - 错误做法: `from pyrogram import Client`
+
+## 2. 异步启动规范
+- **禁止使用 `app.run()`**: 严禁在异步环境中使用 `app.run()`，这会导致事件循环冲突。
+- **标准启动流程**:
+  ```python
+  await app.start()
+  await idle()
+  await app.stop()
+  ```
+
+## 3. 配置与安全
+- **配置管理**: 统一由 `core/config.py` 处理，并通过 `core` 包导出。
+- **敏感信息**: `SESSION_STRING`、`API_ID`、`API_HASH` 等敏感信息必须存储 in `config/config.toml` 中，且该文件严禁提交至 Git。
+- **同步更新**: 任何对 `config/default.toml` 的修改，必须同步更新 `config/config.example.toml`。
+- **代理管理**: 代理逻辑已集成 in `core.Client` 中，开发者只需在配置文件中设置，无需在业务代码中手动处理代理。
+
+## 4. 架构与工程化规范
+- **目录结构**:
+  - `config/`: 存放 TOML 配置文件。
+  - `core/`: 核心框架包，包含 Client 封装、配置加载、双端管理和日志工具。
+  - `plugins/`: 插件目录，支持多级子目录分类。
+  - `utils/`: 通用工具函数包。
+  - `scripts/`: 独立运行的辅助脚本（如登录工具）。
+- **关注点分离 (SoC)**: 严禁将逻辑 (Logic)、配置 (Config)、数据库 (DB) 和入口 (Main) 混合在同一个文件中。
+- **数据库规范**: 统一使用 SQLAlchemy 进行数据库操作。必须使用异步模式 (`AsyncSession`)，并采用 `async_scoped_session` 进行会话管理以确保协程安全。
+- **文件长度限制**: 单个源代码文件严禁超过 300 行。如果超过，必须进行模块化拆分。
+- **模块初始化**: 每个 Python 包/模块目录下必须包含 `__init__.py` 文件。
+- **引用规范**: 跨文件引用必须使用明确的包导入或绝对路径，避免模糊的相对引用。
+
+## 5. 插件化开发
+- **功能解耦**: 所有新功能应以插件形式实现，存放在 `plugins/` 目录下。
+- **层次化结构**: 鼓励在 `plugins/` 下创建子目录进行分类管理。
+- **递归加载**: 插件系统必须支持递归加载子目录中的插件。
+- **插件结构**: 插件应利用 `core` 提供的装饰器（如 `filters`）进行消息过滤和处理。
+
+## 6. 交互式开发 (Ask 模式)
+- **对话实现**: 如需实现与用户的交互（等待用户回复），应使用 `core.Client` 提供的 `ask` 方法，而非自行实现拦截逻辑。
+  - 示例: `answer = await client.ask(chat_id, "请输入内容")`
+
+## 7. 代码风格与日志
+- **类型提示**: 尽量为函数参数 and 返回值添加类型提示（Type Hints）。
+- **中文注释**: 关键逻辑和公共 API 必须包含清晰的中文注释。
+- **严禁使用 `print`**: 所有日志输出必须使用 `core.logger`。
+  - 示例: `logger.info("程序启动中...")`
+
+## 8. 解决问题思维 (Problem Solving Mindset)
+- **第一性原理 (First Principles)**: 遇到复杂问题时，将其拆解为最基础逻辑。
+- **由简入繁 (Simple First)**: 先实现 MVP 版本，再迭代优化。
+- **科学调试 (Scientific Debugging)**: 假设驱动，日志验证。
+- **深度理解 (Deep Understanding)**: 不写自己不理解的代码。
+- **迭代精进 (Iterative Refinement)**: 小步快跑，持续优化。
+
+## 9. 环境与 Shell 规范 (Windows/PowerShell)
+- **操作系统**: Windows 10。
+- **默认 Shell**: 必须使用 PowerShell 命令进行系统操作。
+- **虚拟环境**: 执行 Python 代码或安装依赖时，必须先激活 `.venv` 虚拟环境。
+  - 激活命令: `.\.venv\Scripts\Activate.ps1`
+  - 运行示例: `.\.venv\Scripts\python.exe main.py`
+
+## 10. 架构变更协议 (Architecture First)
+- **修改前必读**：在进行任何功能修改或重构前，必须先阅读 `ARCHITECTURE.md`。
+- **引用同步**：如果修改涉及跨模块调用（如修改了 `core/config.py` 的接口，影响了 `core/manager.py`），必须先在对话中输出受影响的文件列表。
+- **文档先行**：严禁直接修改逻辑。必须先更新 `ARCHITECTURE.md` 中的引用拓扑，并获得用户确认。
+- **循环依赖检测**：严禁产生循环引用（例如 `manager.py` 引用 `client.py`，同时 `client.py` 引用 `manager.py`）。如果发现，必须立即停止并报告。
+- **统一入口原则**：所有插件 and 外部脚本必须通过 `from core import ...` 进行引用，严禁绕过 `core/__init__.py` 直接引用内部模块。

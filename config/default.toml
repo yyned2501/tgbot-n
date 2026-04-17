@@ -1,0 +1,21 @@
+[api]
+api_id = 0
+api_hash = "your_api_hash"
+
+[bot]
+bot_token = "your_bot_token"
+
+[userbot]
+session_string = ""
+prefix = "."
+
+[proxy]
+enabled = false
+scheme = "socks5"
+hostname = "127.0.0.1"
+port = 7890
+username = ""
+password = ""
+
+[database]
+url = "postgresql+asyncpg://user:password@localhost:5432/dbname"

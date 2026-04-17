@@ -1,0 +1,37 @@
+# Telegram API 配置
+# 在 https://my.telegram.org 获取
+[api]
+api_id = 1234567
+api_hash = "abcdef1234567890abcdef1234567890"
+
+# 登录辅助机器人配置
+# 在 @BotFather 获取
+[bot]
+bot_token = "123456789:ABCDEF-GHIJKLMN_OPQRST"
+
+# 人形脚本 (Userbot) 配置
+[userbot]
+# 运行 login_bot.py 后获取的 Session String
+session_string = ""
+# 命令前缀
+prefix = "."
+
+# 代理配置
+[proxy]
+# 是否启用代理
+enabled = false
+# 代理协议: socks4, socks5, http
+scheme = "socks5"
+# 代理地址
+hostname = "127.0.0.1"
+# 代理端口
+port = 7890
+# 代理用户名 (可选)
+username = ""
+# 代理密码 (可选)
+password = ""
+
+# 数据库配置
+[database]
+# PostgreSQL 异步连接字符串 (必须以 postgresql+asyncpg:// 开头)
+url = "postgresql+asyncpg://user:password@localhost:5432/dbname"
