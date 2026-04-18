@@ -41,3 +41,6 @@ jobs:
           # 引用上面 meta 步骤自动生成的 tags 和 labels
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
