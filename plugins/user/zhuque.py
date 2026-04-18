@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 from sqlalchemy import Column, Integer, DateTime, BigInteger
-from core import Client, filters, Message, Base, async_session, logger
+from core import Client, filters, Message, Base, async_session, logger, get_setting
 from scripts.filters import create_bot_filter
 
 GROUPID = -1002262543959
@@ -32,6 +32,10 @@ async def zhuque_handler(client: Client, message: Message):
     监听并记录 Zhuque 压大小结果
     触发逻辑：监听结算通知消息，并从其回复的消息中获取投注详情
     """
+    # 检查开关设置
+    if await get_setting("zhuque_record", "true") == "false":
+        return
+
     try:
         # 1. 从正则匹配结果中获取最终结果 (大/小)
         # message.matches[0] 是 regex 过滤器的匹配结果

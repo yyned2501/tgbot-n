@@ -2,14 +2,23 @@ import os
 from core import manager, idle, logger, init_db
 
 async def main():
-    # 初始化并启动所有客户端 (Userbot & Assistant Bot)
-    manager.init_apps()
-    
-    # 初始化数据库 (此时插件已加载，模型已注册)
+    # 1. 初始化数据库 (仅核心表)
     await init_db()
     
+    # 2. 从数据库加载动态配置 (owner_id, prefix, session_string)
+    await manager.load_settings()
+    
+    # 3. 加载插件模块 (注册插件模型到 Base)
+    manager.load_plugins()
+    
+    # 4. 再次同步数据库 (创建插件定义的表)
+    await init_db()
+    
+    # 5. 初始化所有客户端实例
+    manager.init_apps()
+    
     if not manager.user and not manager.bot:
-        logger.error("未配置 SESSION_STRING 或 BOT_TOKEN。请检查 config/config.toml。")
+        logger.error("未配置 SESSION_STRING 或 BOT_TOKEN。请检查 config/config.toml 或数据库。")
         return
 
     logger.info("人形脚本系统启动中...")

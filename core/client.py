@@ -125,6 +125,9 @@ class Client(PyrogramClient):
         """
         拦截器：检查消息是否是某个 ask 的回复
         """
+        from .logger import logger
+        logger.debug(f"[{self.name}] 收到消息: {message.text or '[媒体]'} (来自: {message.from_user.id if message.from_user else '未知'})")
+        
         chat_id = message.chat.id
         if chat_id in self._pending_asks:
             future = self._pending_asks[chat_id]

@@ -1,5 +1,5 @@
 import asyncio
-from core import manager, Client, filters, Message, API_ID, API_HASH, logger
+from core import manager, Client, filters, Message, API_ID, API_HASH, logger, enums
 
 @Client.bot_command("start", "开始交互", filters=filters.private)
 async def start_handler(client: Client, message: Message):
@@ -55,7 +55,21 @@ async def login_handler(client: Client, message: Message):
         await message.reply("登录成功！正在为您自动保存配置并启动人形脚本...")
         
         if await manager.start_userbot(session_string):
-            await message.reply("✅ 人形脚本已成功启动！\n您现在可以开始使用它了。")
+            # 获取当前前缀用于通知
+            prefix = manager.prefix
+            owner_id = manager.owner_id
+            
+            success_msg = (
+                "✅ **人形脚本已成功启动并绑定！**\n\n"
+                f"🆔 **Owner ID**: `{owner_id}`\n"
+                f"⌨️ **指令前缀**: `{prefix}`\n\n"
+                "您现在可以开始使用它了。"
+            )
+            await message.reply(success_msg)
+            
+            # 如果当前会话不是在私聊中，也给 Owner 发个私聊通知
+            if message.chat.type != enums.ChatType.PRIVATE:
+                await client.send_message(owner_id, success_msg)
         else:
             await message.reply(f"❌ 自动启动失败，但 Session 已保存。请尝试重启程序。\n\nSession String:\n`{session_string}`")
 

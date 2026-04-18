@@ -29,6 +29,7 @@ async def help_handler(client: Client, message: Message):
         "/start - 开始交互\n"
         "/login - 登录 Userbot\n"
         "/status - 查看运行状态\n"
+        "/settings - 系统设置\n"
         "/help - 显示此帮助信息"
     )
     await message.reply(help_text)

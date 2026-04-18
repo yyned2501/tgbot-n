@@ -4,15 +4,59 @@ from typing import Dict, List, Optional
 from .client import Client
 from . import config
 from .logger import logger
+from .database import get_setting, set_setting
 
 class AppManager:
     def __init__(self):
         self.user: Optional[Client] = None
         self.bot: Optional[Client] = None
+        self._owner_id: int = 0
+        self._prefix: str = "."
+        self._session_string: str = ""
 
     @property
     def owner_id(self) -> int:
-        return config.OWNER_ID
+        return self._owner_id
+
+    @property
+    def prefix(self) -> str:
+        return self._prefix
+
+    @property
+    def session_string(self) -> str:
+        return self._session_string
+
+    async def load_settings(self):
+        """
+        从数据库加载动态配置
+        """
+        self._owner_id = int(await get_setting("owner_id", "0"))
+        self._prefix = await get_setting("prefix", ".")
+        self._session_string = await get_setting("session_string", "")
+        
+        # 同步更新 core.PREFIX 变量
+        import core
+        core.PREFIX = self._prefix
+        
+        logger.info(f"配置已加载: Owner={self._owner_id}, Prefix='{self._prefix}', Session={'已设置' if self._session_string else '未设置'}")
+
+    async def set_owner_id(self, owner_id: int):
+        self._owner_id = owner_id
+        await set_setting("owner_id", str(owner_id))
+        logger.info(f"Owner ID 已更新为: {owner_id}")
+
+    async def set_prefix(self, prefix: str):
+        self._prefix = prefix
+        await set_setting("prefix", prefix)
+        logger.info(f"指令前缀已更新为: {prefix}")
+        # 同步更新 core 模块中的 PREFIX 变量（如果存在）
+        import core
+        core.PREFIX = prefix
+
+    async def set_session_string(self, session_string: str):
+        self._session_string = session_string
+        await set_setting("session_string", session_string)
+        logger.info("Session String 已更新并保存至数据库")
 
     def _load_plugin_modules(self, root_dir: str, prefix: str = ""):
         """
@@ -46,19 +90,55 @@ class AppManager:
                     modules.append(module_name)
         return modules
 
-    def init_apps(self):
-        # 1. 初始化 Userbot (人形脚本)
-        if config.SESSION_STRING:
-            self._init_userbot(config.SESSION_STRING)
+    def load_plugins(self):
+        """
+        手动导入所有插件模块，以触发装饰器并注册数据库模型
+        """
+        logger.info("正在预加载所有插件模块...")
+        # 1. 加载 Bot 插件
+        self._load_plugin_modules("plugins/bot", prefix="bot")
+        
+        # 2. 加载 User 插件
+        self._load_plugin_modules("plugins/user", prefix="user")
+        
+        # 3. 加载 plugins 根目录下的插件
+        count = 0
+        for f in os.listdir("plugins"):
+            if f.endswith(".py") and f != "__init__.py":
+                try:
+                    module_name = f"plugins.{f.replace('.py', '')}"
+                    importlib.import_module(module_name)
+                    logger.debug(f"手动加载根目录插件模块: {module_name}")
+                    count += 1
+                except Exception as e:
+                    logger.error(f"无法导入根目录插件 {f}: {e}")
+        logger.info(f"插件模块预加载完成。根目录插件数量: {count}")
 
-        # 2. 初始化 Assistant Bot (辅助机器人)
-        if config.BOT_TOKEN:
-            # 提前加载插件以触发装饰器
-            self._load_plugin_modules("plugins/bot", prefix="bot")
+    def init_apps(self):
+        """
+        初始化 Client 实例
+        """
+        # 1. 初始化 Userbot
+        if self.session_string:
+            user_plugin_modules = self._get_plugin_modules("plugins/user", prefix="user")
+            # 同时也加载 plugins/ 根目录下的插件
+            for f in os.listdir("plugins"):
+                if f.endswith(".py") and f != "__init__.py":
+                    user_plugin_modules.append(f.replace(".py", ""))
             
-            # 获取 plugins/bot 下的插件，前缀设为 bot
+            logger.info(f"初始化 Userbot，加载插件: {user_plugin_modules}")
+            self.user = Client(
+                "my_userbot",
+                api_id=config.API_ID,
+                api_hash=config.API_HASH,
+                session_string=self.session_string,
+                plugins=dict(root="plugins", include=user_plugin_modules) if user_plugin_modules else None
+            )
+
+        # 2. 初始化 Assistant Bot
+        if config.BOT_TOKEN:
             bot_plugin_modules = self._get_plugin_modules("plugins/bot", prefix="bot")
-            logger.info(f"加载 Bot 插件: {bot_plugin_modules}")
+            logger.info(f"初始化 Bot，加载插件: {bot_plugin_modules}")
             self.bot = Client(
                 "my_assistant_bot",
                 api_id=config.API_ID,
@@ -68,17 +148,14 @@ class AppManager:
             )
 
     def _init_userbot(self, session_string: str):
-        # 提前加载插件以触发装饰器
-        self._load_plugin_modules("plugins/user", prefix="user")
-        
-        # 获取 plugins/user 下的插件，前缀设为 user
+        """
+        内部方法：用于动态启动时的初始化
+        """
         user_plugin_modules = self._get_plugin_modules("plugins/user", prefix="user")
-        # 同时也加载 plugins/ 根目录下的插件（兼容旧结构，无前缀）
         for f in os.listdir("plugins"):
             if f.endswith(".py") and f != "__init__.py":
                 user_plugin_modules.append(f.replace(".py", ""))
         
-        logger.info(f"加载 Userbot 插件: {user_plugin_modules}")
         self.user = Client(
             "my_userbot",
             api_id=config.API_ID,
@@ -96,7 +173,7 @@ class AppManager:
             await self.user.stop()
         
         # 更新配置并初始化
-        config.update_session_string(session_string)
+        await self.set_session_string(session_string)
         self._init_userbot(session_string)
         
         logger.info("正在动态启动 Userbot...")
@@ -104,25 +181,26 @@ class AppManager:
         
         # 获取并更新 Owner ID
         me = await self.user.get_me()
-        config.update_owner_id(me.id)
+        await self.set_owner_id(me.id)
         logger.info(f"Userbot 已启动，Owner ID: {me.id}")
         
         return True
 
     async def start_all(self):
-        if self.user:
-            logger.info("正在启动 Userbot...")
-            await self.user.start()
-            # 获取并更新 Owner ID
-            me = await self.user.get_me()
-            config.update_owner_id(me.id)
-            logger.info(f"Userbot 已启动，Owner ID: {me.id}")
-            
         if self.bot:
             logger.info("正在启动 Assistant Bot...")
             await self.bot.start()
             # 同步机器人命令菜单
             await self.bot.sync_bot_commands()
+
+        if self.user:
+            logger.info("正在启动 Userbot...")
+            await self.user.start()
+            # 获取并更新 Owner ID
+            me = await self.user.get_me()
+            if self.owner_id != me.id:
+                await self.set_owner_id(me.id)
+            logger.info(f"Userbot 已启动，Owner ID: {me.id}")
 
     async def stop_all(self):
         if self.user:
@@ -134,13 +212,18 @@ class AppManager:
         """
         使用 Assistant Bot 向 Owner 发送消息
         """
-        if self.bot and self.owner_id:
-            try:
-                await self.bot.send_message(self.owner_id, text)
-            except Exception as e:
-                logger.error(f"Bot 发送消息失败: {e}")
-        else:
-            logger.warning("Bot 未启动或 Owner ID 未设置，无法发送消息")
+        if not self.bot or not self.bot.is_connected:
+            logger.warning("Bot 未启动，无法发送消息")
+            return
+            
+        if not self.owner_id:
+            logger.warning("Owner ID 未设置，无法发送消息")
+            return
+
+        try:
+            await self.bot.send_message(self.owner_id, text)
+        except Exception as e:
+            logger.error(f"Bot 发送消息失败: {e}")
 
 # 全局单例
 manager = AppManager()

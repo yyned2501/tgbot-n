@@ -31,10 +31,10 @@ tgbot-n/
 | 模块 | 职责 (Responsibility) | 非职责 (Non-Responsibility) |
 | :--- | :--- | :--- |
 | `main.py` | 程序生命周期起始、全局异常捕获、启动通知 | 具体的业务逻辑、Client 初始化细节 |
-| `core/manager.py` | 管理 User/Bot 实例、插件预加载、配置更新协调 | 具体的 Telegram 协议处理 |
+| `core/manager.py` | 管理 User/Bot 实例、插件预加载、管理动态配置 (Database-based) | 具体的 Telegram 协议处理 |
 | `core/client.py` | 封装 Pyrogram 接口、实现交互式 `ask`、自动处理代理 | 业务逻辑分发 (由插件负责) |
-| `core/config.py` | 读写 TOML 配置、提供全局配置变量 | 验证配置的业务有效性 |
-| `core/database.py` | 管理 SQLAlchemy 异步引擎、Session 生命周期、自动建表 | 定义具体的业务模型 (由插件或单独模型文件负责) |
+| `core/config.py` | 读取静态 TOML 配置、提供基础连接变量 | 验证配置的业务有效性、管理动态设置 |
+| `core/database.py` | 管理 SQLAlchemy 异步引擎、Session 生命周期、自动建表、处理数据库降级与自动迁移 | 定义具体的业务模型 (由插件或单独模型文件负责) |
 | `core/logger.py` | 格式化日志输出、维护日志文件、行号追踪 | 决定哪些信息该记录 (由调用者决定) |
 | `plugins/` | 实现具体的业务功能 (命令处理器、事件监听) | 管理 Client 状态、读写核心配置文件 |
 
@@ -44,12 +44,14 @@ tgbot-n/
 graph TD
     Main[main.py] --> Manager[core/manager.py]
     Main --> Logger[core/logger.py]
+    Main --> Database[core/database.py]
     
     Manager --> Client[core/client.py]
     Manager --> Config[core/config.py]
+    Manager --> Database
     Manager --> Logger
     
-    Database[core/database.py] --> Config
+    Database --> Config
     Database --> Logger
     
     Client --> Config
