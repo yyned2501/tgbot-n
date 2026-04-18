@@ -1,32 +1,43 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Image on Release
 
 on:
   release:
-    types: [published] # 当 Release 正式发布时触发
+    types: [published] # 仅在正式发布 Release 时触发
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
-      # 1. 检出代码
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. 登录到 Docker Hub
+      # --- 关键步骤：提取 Release Tag ---
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # 替换为你的 Docker Hub 镜像名
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/tgbot-n
+          tags: |
+            # 使用 Release Tag，例如 v1.2.3
+            type=ref,event=tag
+            # 同时始终更新 latest 标签
+            type=raw,value=latest
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 3. 设置 Docker Buildx (用于增强构建功能)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 4. 构建并推送镜像
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          # 替换为你的 镜像名称
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/tgbot-n:latest
+          # 引用上面 meta 步骤自动生成的 tags 和 labels
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
