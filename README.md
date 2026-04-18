@@ -62,16 +62,96 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### 🐳 使用 Docker 运行
+### 🐳 使用 Docker 部署
 
-1. 构建镜像：
+本项目支持 Docker 部署，并内置了配置自动初始化机制。
+
+#### 方案 1: Docker CLI 直接运行
+
+1. **运行容器**：
    ```bash
-   docker build -t tgbot-n .
+   docker run -d \
+     --name tgbot-n \
+     -v $(pwd)/config:/config \
+     -v $(pwd)/logs:/app/logs \
+     yyned2501/tgbot-n:latest
    ```
-2. 运行容器：
+
+   **机制说明**：
+   - **挂载路径**: 注意我们将宿主机的 `config` 目录挂载到了容器的 `/config`（独立挂载点），这样不会覆盖镜像内自带的默认配置。
+   - **自动初始化**: 如果本地 `config` 目录为空，容器启动时会自动将 `config.example.toml` 复制到该目录，并生成一个初始的 `config.toml`。
+   - **模板同步**: 每次启动都会自动更新本地的 `config.example.toml`，确保你看到的是最新的配置模板。
+
+2. **配置项目**：
+   编辑宿主机上自动生成的 `config/config.toml` 文件，填入必要信息，然后重启容器：
    ```bash
-   docker run -d --name tgbot-n -v $(pwd)/config:/app/config -v $(pwd)/logs:/app/logs tgbot-n
+   docker restart tgbot-n
    ```
+
+#### 方案 2: Docker Compose 编排部署（推荐）
+
+1. **创建 `docker-compose.yml`**：
+   ```yaml
+   version: '3.8'
+
+   services:
+     tgbot-n:
+       image: yyned2501/tgbot-n:latest
+       container_name: tgbot-n
+       restart: unless-stopped
+       volumes:
+         - ./config:/config
+         - ./logs:/app/logs
+       environment:
+         - TZ=Asia/Shanghai
+       # 可选：如果需要网络隔离
+       # networks:
+       #   - bot-network
+
+   # networks:
+   #   bot-network:
+   #     driver: bridge
+   ```
+
+2. **启动服务**：
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **查看日志**：
+   ```bash
+   docker-compose logs -f tgbot-n
+   ```
+
+4. **重启服务**：
+   ```bash
+   docker-compose restart
+   ```
+
+5. **停止并移除服务**：
+   ```bash
+   docker-compose down
+   ```
+
+#### 本地构建镜像
+
+如需本地构建：
+
+```bash
+# 克隆项目
+git clone https://github.com/yyned2501/tgbot-n.git
+cd tgbot-n
+
+# 构建镜像
+docker build -t tgbot-n:latest .
+
+# 运行容器
+docker run -d \
+  --name tgbot-n \
+  -v $(pwd)/config:/config \
+  -v $(pwd)/logs:/app/logs \
+  tgbot-n:latest
+```
 
 ## 🛠️ 插件开发示例
 
