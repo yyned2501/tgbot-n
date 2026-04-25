@@ -1,26 +1,10 @@
 import re
 from datetime import datetime
-from sqlalchemy import Column, Integer, DateTime, BigInteger
-from core import Client, filters, Message, Base, async_session, logger, get_setting
+from core import Client, filters, Message, Base, async_session, logger, get_setting, ZhuqueResult
 from scripts.filters import create_bot_filter
 
 GROUPID = -1002262543959
 BOTID = 5697370563
-
-
-class ZhuqueResult(Base):
-    """
-    Zhuque 压大小结果模型
-    """
-
-    __tablename__ = "zhuque_results"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    final_result = Column(Integer)  # 1 为大, 0 为小
-    big_total = Column(BigInteger)  # 押大合计金额
-    small_total = Column(BigInteger)  # 押小合计金额
-    created_at = Column(DateTime)  # 游戏创建时间
-    settlement_time = Column(DateTime)  # 游戏结算时间
-
 
 @Client.on_message(
     filters.chat(GROUPID)

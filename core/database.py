@@ -6,10 +6,10 @@ from sqlalchemy.ext.asyncio import (
     async_scoped_session,
     AsyncSession as _AsyncSession,
 )
-from sqlalchemy import Column, String, select, text
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import select, text
 from .config import DATABASE_URL
 from .logger import logger
+from .models import Base, SystemSetting
 
 class AsyncSession(_AsyncSession):
     """
@@ -47,17 +47,6 @@ async_session = async_scoped_session(
     _session_factory,
     scopefunc=asyncio.current_task,
 )
-
-# 声明式基类
-Base = declarative_base()
-
-class SystemSetting(Base):
-    """
-    通用系统设置模型
-    """
-    __tablename__ = "system_settings"
-    key = Column(String(100), primary_key=True)
-    value = Column(String(500))
 
 async def get_setting(key: str, default: str = "") -> str:
     """
@@ -142,6 +131,9 @@ async def init_db():
     """
     global engine, _session_factory, _is_initialized, _is_using_sqlite
     
+    # 导入所有模型以确保它们被注册到 Base.metadata
+    from .models import ZhuqueResult 
+
     if _is_initialized:
         # 如果已经初始化过，只需确保表结构同步
         try:
