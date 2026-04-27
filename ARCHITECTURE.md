@@ -19,7 +19,10 @@ tgbot-n/
 │   └── config.toml         # 用户自定义配置 (私密，不提交)
 ├── plugins/                # 插件目录
 │   ├── bot/                # 辅助机器人插件 (如登录、状态查询)
-│   └── user/               # 人形脚本插件 (如 dme、ping)
+│   └── user/               # 人形脚本插件
+│       ├── info/           # 信息查询类 (如 id、ping)
+│       ├── utils/          # 工具类 (如 dme、re、getmsg)
+│       └── custom/         # 特定功能/第三方插件 (如 zhuque)
 ├── scripts/                # 独立辅助脚本 (如初始登录工具)
 ├── utils/                  # 通用工具函数
 ├── logs/                   # 日志文件存放目录

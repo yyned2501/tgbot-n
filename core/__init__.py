@@ -4,7 +4,7 @@ from .database import async_session, init_db, get_setting, set_setting
 from .models import Base, SystemSetting, ZhuqueResult
 from .manager import manager
 from .logger import logger
-from pyrogram import filters, enums, idle
+from pyrogram import filters, enums, idle, errors
 from pyrogram.filters import Filter
 from pyrogram.types import Message, CallbackQuery, InlineQuery
 
@@ -18,6 +18,7 @@ __all__ = [
     "Filter",
     "enums", 
     "idle", 
+    "errors",
     "Message", 
     "CallbackQuery", 
     "InlineQuery",

@@ -62,6 +62,7 @@
 ## 9. 环境与 Shell 规范 (Windows/PowerShell)
 - **操作系统**: Windows 10。
 - **默认 Shell**: 必须使用 PowerShell 命令进行系统操作。
+- **命令连接符**: 在 PowerShell 中必须使用 `;` 作为命令连接符，严禁使用 `&&`。
 - **虚拟环境**: 执行 Python 代码或安装依赖时，必须先激活 `.venv` 虚拟环境。
   - 激活命令: `.\.venv\Scripts\Activate.ps1`
   - 运行示例: `.\.venv\Scripts\python.exe main.py`
