@@ -16,7 +16,7 @@ async def send_settings_menu(target: Message, edit: bool = False):
     """
     发送或编辑设置菜单
     """
-    zhuque_record = await get_setting("zhuque_record", "true")
+    zhuque_record = await get_setting("zhuque_record", "false")
     zhuque_icon = "✅" if zhuque_record == "true" else "❌"
     
     prefix = manager.prefix
@@ -56,7 +56,7 @@ async def toggle_zhuque_record_handler(client: Client, callback_query: CallbackQ
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
 
-    current = await get_setting("zhuque_record", "true")
+    current = await get_setting("zhuque_record", "false")
     new_value = "false" if current == "true" else "true"
     await set_setting("zhuque_record", new_value)
     

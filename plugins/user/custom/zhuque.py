@@ -17,7 +17,7 @@ async def zhuque_handler(client: Client, message: Message):
     触发逻辑：监听结算通知消息，并从其回复的消息中获取投注详情
     """
     # 检查开关设置
-    if await get_setting("zhuque_record", "true") == "false":
+    if await get_setting("zhuque_record", "false") == "false":
         return
 
     try:
