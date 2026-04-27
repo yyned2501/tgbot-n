@@ -36,6 +36,26 @@ class Client(PyrogramClient):
             group=-100
         )
 
+    def add_handler(self, handler, group: int = 0):
+        """
+        重写 add_handler，实现模块级开关拦截
+        """
+        from .manager import manager
+        
+        original_callback = handler.callback
+        module_name = getattr(original_callback, "__module__", "")
+
+        # 只有 Userbot 的插件才受此拦截器影响
+        if self.name == "my_userbot" and module_name.startswith("plugins.user"):
+            async def wrapped_callback(client, message, *args, **kwargs):
+                if not manager.is_module_enabled(module_name):
+                    return
+                return await original_callback(client, message, *args, **kwargs)
+            
+            handler.callback = wrapped_callback
+        
+        super().add_handler(handler, group)
+
     def _register_custom_commands(self):
         """
         注册通过 @bot_command 装饰的命令处理器

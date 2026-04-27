@@ -1,6 +1,7 @@
 import os
 import importlib
-from typing import Dict, List, Optional
+import json
+from typing import Dict, List, Optional, Set
 from .client import Client
 from . import config
 from .logger import logger
@@ -13,6 +14,7 @@ class AppManager:
         self._owner_id: int = 0
         self._prefix: str = "."
         self._session_string: str = ""
+        self._disabled_modules: Set[str] = set()
 
     @property
     def owner_id(self) -> int:
@@ -26,6 +28,10 @@ class AppManager:
     def session_string(self) -> str:
         return self._session_string
 
+    @property
+    def disabled_modules(self) -> Set[str]:
+        return self._disabled_modules
+
     async def load_settings(self):
         """
         从数据库加载动态配置
@@ -34,11 +40,18 @@ class AppManager:
         self._prefix = await get_setting("prefix", ".")
         self._session_string = await get_setting("session_string", "")
         
+        # 加载禁用模块列表
+        disabled_json = await get_setting("disabled_modules", "[]")
+        try:
+            self._disabled_modules = set(json.loads(disabled_json))
+        except Exception:
+            self._disabled_modules = set()
+        
         # 同步更新 core.PREFIX 变量
         import core
         core.PREFIX = self._prefix
         
-        logger.info(f"配置已加载: Owner={self._owner_id}, Prefix='{self._prefix}', Session={'已设置' if self._session_string else '未设置'}")
+        logger.info(f"配置已加载: Owner={self._owner_id}, Prefix='{self._prefix}', DisabledModules={len(self._disabled_modules)}")
 
     async def set_owner_id(self, owner_id: int):
         self._owner_id = owner_id
@@ -57,6 +70,47 @@ class AppManager:
         self._session_string = session_string
         await set_setting("session_string", session_string)
         logger.info("Session String 已更新并保存至数据库")
+
+    async def toggle_module(self, module_name: str) -> bool:
+        """
+        切换模块启用状态
+        返回: True 表示已启用, False 表示已禁用
+        """
+        if module_name in self._disabled_modules:
+            self._disabled_modules.remove(module_name)
+            enabled = True
+        else:
+            self._disabled_modules.add(module_name)
+            enabled = False
+        
+        await set_setting("disabled_modules", json.dumps(list(self._disabled_modules)))
+        logger.info(f"模块 {module_name} 已{'启用' if enabled else '禁用'}")
+        return enabled
+
+    def is_module_enabled(self, module_name: str) -> bool:
+        """
+        检查模块是否启用
+        """
+        return module_name not in self._disabled_modules
+
+    async def enable_all_in_path(self, modules: List[str]):
+        """
+        批量启用模块
+        """
+        for mod in modules:
+            if mod in self._disabled_modules:
+                self._disabled_modules.remove(mod)
+        await set_setting("disabled_modules", json.dumps(list(self._disabled_modules)))
+        logger.info(f"已批量启用 {len(modules)} 个模块")
+
+    async def disable_all_in_path(self, modules: List[str]):
+        """
+        批量禁用模块
+        """
+        for mod in modules:
+            self._disabled_modules.add(mod)
+        await set_setting("disabled_modules", json.dumps(list(self._disabled_modules)))
+        logger.info(f"已批量禁用 {len(modules)} 个模块")
 
     def _load_plugin_modules(self, root_dir: str, prefix: str = ""):
         """
