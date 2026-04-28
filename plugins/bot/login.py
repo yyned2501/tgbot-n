@@ -1,13 +1,30 @@
 import asyncio
 from core import tg, db, app
+from plugins.bot.settings import send_settings_menu
 
 @tg.Client.bot_command("start", "开始交互", filters=tg.filters.private)
 async def start_handler(client: tg.Client, message: tg.Message):
+    # 60秒后自动删除指令消息
+    asyncio.create_task(tg.delete_later(message))
+    
+    # 如果已登录，直接显示设置菜单
+    if app.manager.session_string:
+        await send_settings_menu(message)
+        return
+        
     # 只有 Assistant Bot 才会加载这个插件
     await message.reply("你好！我是登录辅助机器人。\n请发送 /login 开始获取 Session String 并启动人形脚本。")
 
 @tg.Client.bot_command("login", "登录 Userbot", filters=tg.filters.private)
 async def login_handler(client: tg.Client, message: tg.Message):
+    # 60秒后自动删除指令消息
+    asyncio.create_task(tg.delete_later(message))
+    
+    # 如果已登录，提示用户
+    if app.manager.session_string:
+        await message.reply("✅ 您已经登录过了。\n如需退出或切换账号，请前往 /settings 进行退出登录操作。")
+        return
+
     chat_id = message.chat.id
     
     # 1. 询问手机号

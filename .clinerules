@@ -73,3 +73,7 @@
 - **文档先行**：严禁直接修改逻辑。必须先更新 `ARCHITECTURE.md` 中的引用拓扑，并获得用户确认。
 - **循环依赖检测**：严禁产生循环引用（例如 `manager.py` 引用 `client.py`，同时 `client.py` 引用 `manager.py`）。如果发现，必须立即停止并报告。
 - **统一入口原则**：所有插件 and 外部脚本必须通过 `from core import ...` 进行引用，严禁绕过 `core/__init__.py` 直接引用内部模块。
+
+## 11. 指令清理规范
+- **自动清理**: 所有 Bot 指令 (Command) 在收到后，必须在 60 秒后自动删除指令消息本身，以保持聊天记录整洁。
+- **实现方式**: 统一使用 `asyncio.create_task(tg.delete_later(message))` 进行异步清理。

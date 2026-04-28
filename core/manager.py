@@ -279,6 +279,23 @@ class AppManager:
         
         return True
 
+    async def logout(self):
+        """
+        退出登录：停止 Userbot 并清除 Session
+        """
+        if self.user:
+            logger.info("正在停止 Userbot 并退出登录...")
+            try:
+                await self.user.stop()
+            except Exception as e:
+                logger.error(f"停止 Userbot 失败: {e}")
+            self.user = None
+        
+        await self.set_session_string("")
+        self._owner_id = 0
+        await set_setting("owner_id", "0")
+        logger.info("已成功退出登录并清除 Session 数据")
+
     async def start_all(self):
         if self.bot:
             logger.info("正在启动 Assistant Bot...")

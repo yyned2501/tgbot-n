@@ -1,4 +1,5 @@
 import os
+import asyncio
 from core import tg, db, app
 
 @tg.Client.bot_command("settings", "系统设置")
@@ -6,6 +7,9 @@ async def settings_handler(client: tg.Client, message: tg.Message):
     """
     显示系统设置菜单
     """
+    # 60秒后自动删除指令消息
+    asyncio.create_task(tg.delete_later(message))
+    
     if message.from_user.id != app.manager.owner_id:
         await message.reply("❌ 您没有权限执行此操作。")
         return
@@ -18,20 +22,14 @@ async def send_settings_menu(target: tg.Message, edit: bool = False):
     """
     prefix = app.manager.prefix
     
-    keyboard = tg.InlineKeyboardMarkup([
-        [
-            tg.InlineKeyboardButton(
-                f"指令前缀: {prefix}",
-                callback_data="set_prefix"
-            )
-        ],
-        [
-            tg.InlineKeyboardButton(
-                "🔌 插件管理",
-                callback_data="manage_plugins:"
-            )
-        ]
+    kb = tg.Keyboards()
+    kb.add_buttons([
+        tg.Keyboards.button(f"指令前缀: {prefix}", callback_data="set_prefix"),
+        tg.Keyboards.button("🔌 插件管理", callback_data="manage_plugins:"),
+        tg.Keyboards.button("🚪 退出登录", callback_data="logout_confirm")
     ])
+    kb.row().add_button("🗑️ 关闭菜单", callback_data="close_message")
+    keyboard = kb.build()
     
     text = "⚙️ **系统设置**\n\n点击下方按钮切换功能开关或修改配置："
     
@@ -42,6 +40,90 @@ async def send_settings_menu(target: tg.Message, edit: bool = False):
             await target.reply(text, reply_markup=keyboard)
     except Exception as e:
         app.logger.error(f"发送设置菜单失败: {e}")
+
+@tg.Client.bot_command("logout", "退出登录", filters=tg.filters.private)
+async def logout_command_handler(client: tg.Client, message: tg.Message):
+    """
+    处理 /logout 指令
+    """
+    # 60秒后自动删除指令消息
+    asyncio.create_task(tg.delete_later(message))
+    
+    if message.from_user.id != app.manager.owner_id:
+        await message.reply("❌ 您没有权限执行此操作。")
+        return
+    
+    if not app.manager.session_string:
+        await message.reply("❌ 您尚未登录。")
+        return
+
+    await send_logout_confirm(message, edit=False)
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^logout_confirm$"))
+async def logout_confirm_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """
+    处理退出登录确认 (来自回调)
+    """
+    if callback_query.from_user.id != app.manager.owner_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+
+    await send_logout_confirm(callback_query.message, edit=True)
+
+async def send_logout_confirm(target: tg.Message, edit: bool = True):
+    """
+    发送退出登录确认界面
+    """
+    keyboard = tg.Keyboards.confirm_cancel(
+        confirm_data="logout_execute",
+        cancel_data="back_to_settings",
+        confirm_text="⚠️ 确认退出",
+        cancel_text="取消"
+    )
+    
+    text = (
+        "⚠️ **确认退出登录？**\n\n"
+        "退出后将执行以下操作：\n"
+        "1. 停止当前运行的人形脚本 (Userbot)。\n"
+        "2. 从数据库中清除 Session String。\n"
+        "3. 清除 Owner 绑定信息。\n\n"
+        "**此操作不可撤销，确定继续吗？**"
+    )
+    
+    if edit:
+        await target.edit_text(text, reply_markup=keyboard)
+    else:
+        await target.reply(text, reply_markup=keyboard)
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^logout_execute$"))
+async def logout_execute_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """
+    执行退出登录
+    """
+    if callback_query.from_user.id != app.manager.owner_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+    
+    try:
+        await app.manager.logout()
+        await callback_query.edit_message_text("✅ **已成功退出登录**\n\n所有 Session 数据已清除，人形脚本已停止。您可以发送 /login 重新登录。")
+    except Exception as e:
+        app.logger.error(f"退出登录失败: {e}")
+        await callback_query.answer(f"❌ 退出失败: {e}", show_alert=True)
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^close_message$"))
+async def close_message_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """
+    统一处理关闭/删除消息
+    """
+    try:
+        await callback_query.message.delete()
+    except Exception:
+        # 如果无法删除（例如消息太旧），尝试清空内容
+        try:
+            await callback_query.edit_message_text("🗑️ 菜单已关闭")
+        except Exception:
+            pass
 
 def get_user_plugins():
     """
@@ -106,51 +188,47 @@ async def send_plugins_menu(target: tg.Message, rel_path: str = "", edit: bool =
     dirs.sort()
     files.sort()
     
-    buttons = []
+    kb = tg.Keyboards()
     
     # 列出子目录
+    dir_buttons = []
     for d in dirs:
         new_rel_path = f"{rel_path}.{d}" if rel_path else d
         status_icon = get_directory_status(new_rel_path)
         display_icon = f" {status_icon}" if status_icon else ""
-        buttons.append([
-            tg.InlineKeyboardButton(
-                f"📁 {d}/{display_icon}",
-                callback_data=f"manage_plugins:{new_rel_path}"
-            )
-        ])
+        dir_buttons.append(tg.Keyboards.button(f"📁 {d}{display_icon}", callback_data=f"manage_plugins:{new_rel_path}"))
+    
+    if dir_buttons:
+        kb.add_buttons(dir_buttons)
     
     # 列出文件
+    file_buttons = []
     for f in files:
         mod_name = f"{current_module_prefix}.{f}"
         status_icon = "✅" if app.manager.is_module_enabled(mod_name) else "❌"
-        buttons.append([
-            tg.InlineKeyboardButton(
-                f"📄 {f}: {status_icon}",
-                callback_data=f"toggle_mod:{mod_name}:{rel_path}"
-            )
-        ])
+        file_buttons.append(tg.Keyboards.button(f"📄 {f}: {status_icon}", callback_data=f"toggle_mod:{mod_name}:{rel_path}"))
     
-    # 导航按钮
-    nav_buttons = []
-    if rel_path:
-        # 计算父目录
-        parent_path = ".".join(rel_path.split(".")[:-1])
-        nav_buttons.append(tg.InlineKeyboardButton("⬅️ 返回上级", callback_data=f"manage_plugins:{parent_path}"))
-    else:
-        nav_buttons.append(tg.InlineKeyboardButton("⬅️ 返回主菜单", callback_data="back_to_settings"))
+    if file_buttons:
+        kb.add_buttons(file_buttons)
     
     # 全部操作按钮 (仅在最末级目录，即没有子文件夹的目录显示)
     if files and not dirs:
-        bulk_buttons = [
-            tg.InlineKeyboardButton("✅ 全部开启", callback_data=f"bulk_enable:{rel_path}"),
-            tg.InlineKeyboardButton("❌ 全部禁用", callback_data=f"bulk_disable:{rel_path}")
-        ]
-        buttons.append(bulk_buttons)
+        kb.row()
+        kb.add_button("✅ 全部开启", callback_data=f"bulk_enable:{rel_path}")
+        kb.add_button("❌ 全部禁用", callback_data=f"bulk_disable:{rel_path}")
     
-    buttons.append(nav_buttons)
+    # 导航按钮
+    kb.row()
+    if rel_path:
+        # 计算父目录
+        parent_path = ".".join(rel_path.split(".")[:-1])
+        kb.add_button("⬅️ 返回上级", callback_data=f"manage_plugins:{parent_path}")
+    else:
+        kb.add_button("⬅️ 返回主菜单", callback_data="back_to_settings")
     
-    keyboard = tg.InlineKeyboardMarkup(buttons)
+    kb.add_button("🗑️ 关闭", callback_data="close_message")
+    
+    keyboard = kb.build()
     display_path = f"plugins/user/{rel_path.replace('.', '/')}" if rel_path else "plugins/user"
     text = f"🔌 **插件管理**\n当前路径: `{display_path}`\n\n点击文件夹进入，点击文件切换开关："
     

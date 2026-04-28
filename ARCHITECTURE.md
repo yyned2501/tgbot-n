@@ -10,6 +10,7 @@ tgbot-n/
 ├── core/                   # 核心框架包
 │   ├── __init__.py         # 统一导出接口，插件引用的唯一入口
 │   ├── client.py           # 封装 Pyrogram Client，增加 ask、命令注册等功能
+│   ├── keyboard.py         # 键盘工厂，提供链式调用与自适应布局
 │   ├── config.py           # 配置加载与持久化管理 (TOML)
 │   ├── database.py         # 数据库管理 (SQLAlchemy 异步)
 │   ├── logger.py           # 统一日志工具，支持控制台与文件输出
@@ -36,6 +37,7 @@ tgbot-n/
 | `main.py` | 程序生命周期起始、全局异常捕获、启动通知 | 具体的业务逻辑、Client 初始化细节 |
 | `core/manager.py` | 管理 User/Bot 实例、插件预加载、管理动态配置 (Database-based) | 具体的 Telegram 协议处理 |
 | `core/client.py` | 封装 Pyrogram 接口、实现交互式 `ask`、自动处理代理 | 业务逻辑分发 (由插件负责) |
+| `core/keyboard.py` | 提供 InlineKeyboardMarkup 的对象化封装、链式构建及自适应布局逻辑 | 具体的业务按钮定义 (由插件负责) |
 | `core/config.py` | 读取静态 TOML 配置、提供基础连接变量 | 验证配置的业务有效性、管理动态设置 |
 | `core/database.py` | 管理 SQLAlchemy 异步引擎、Session 生命周期、自动建表、处理数据库降级与自动迁移 | 定义具体的业务模型 (由插件或单独模型文件负责) |
 | `core/logger.py` | 格式化日志输出、维护日志文件、行号追踪 | 决定哪些信息该记录 (由调用者决定) |
@@ -66,6 +68,7 @@ graph TD
     CoreInit --> APP[core/app.py]
     
     TG --> Client[core/client.py]
+    TG --> Keyboard[core/keyboard.py]
     DB --> Database[core/database.py]
     DB --> Models[core/models/*]
     APP --> Manager[core/manager.py]
@@ -80,6 +83,6 @@ graph TD
 
 ## 5. 子门面导出规范 (Sub-facade Export)
 为了避免 `core/__init__.py` 过度臃肿，采用分组导出模式：
-- `core.tg`: 包含 Client, filters, types, enums 等 Telegram 相关组件。
+- `core.tg`: 包含 Client, filters, types, enums, Keyboards 等 Telegram 相关组件。
 - `core.db`: 包含数据库 Session, 模型, 设置读写函数。
 - `core.app`: 包含管理器 (manager), 配置常量, 日志工具。
