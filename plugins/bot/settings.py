@@ -1,35 +1,32 @@
 import os
-from core import (
-    Client, filters, Message, CallbackQuery, manager, 
-    get_setting, set_setting, logger, InlineKeyboardMarkup, InlineKeyboardButton
-)
+from core import tg, db, app
 
-@Client.bot_command("settings", "系统设置")
-async def settings_handler(client: Client, message: Message):
+@tg.Client.bot_command("settings", "系统设置")
+async def settings_handler(client: tg.Client, message: tg.Message):
     """
     显示系统设置菜单
     """
-    if message.from_user.id != manager.owner_id:
+    if message.from_user.id != app.manager.owner_id:
         await message.reply("❌ 您没有权限执行此操作。")
         return
 
     await send_settings_menu(message)
 
-async def send_settings_menu(target: Message, edit: bool = False):
+async def send_settings_menu(target: tg.Message, edit: bool = False):
     """
     发送或编辑设置菜单
     """
-    prefix = manager.prefix
+    prefix = app.manager.prefix
     
-    keyboard = InlineKeyboardMarkup([
+    keyboard = tg.InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(
+            tg.InlineKeyboardButton(
                 f"指令前缀: {prefix}",
                 callback_data="set_prefix"
             )
         ],
         [
-            InlineKeyboardButton(
+            tg.InlineKeyboardButton(
                 "🔌 插件管理",
                 callback_data="manage_plugins:"
             )
@@ -44,7 +41,7 @@ async def send_settings_menu(target: Message, edit: bool = False):
         else:
             await target.reply(text, reply_markup=keyboard)
     except Exception as e:
-        logger.error(f"发送设置菜单失败: {e}")
+        app.logger.error(f"发送设置菜单失败: {e}")
 
 def get_user_plugins():
     """
@@ -75,7 +72,7 @@ def get_directory_status(rel_path: str):
     if not target_modules:
         return ""
         
-    enabled_count = sum(1 for m in target_modules if manager.is_module_enabled(m))
+    enabled_count = sum(1 for m in target_modules if app.manager.is_module_enabled(m))
     
     if enabled_count == len(target_modules):
         return "✅"
@@ -84,7 +81,7 @@ def get_directory_status(rel_path: str):
     else:
         return "🌗"
 
-async def send_plugins_menu(target: Message, rel_path: str = "", edit: bool = True):
+async def send_plugins_menu(target: tg.Message, rel_path: str = "", edit: bool = True):
     """
     显示插件管理菜单 (分层浏览)
     rel_path: 相对于 plugins/user 的路径，例如 "info" 或 ""
@@ -117,7 +114,7 @@ async def send_plugins_menu(target: Message, rel_path: str = "", edit: bool = Tr
         status_icon = get_directory_status(new_rel_path)
         display_icon = f" {status_icon}" if status_icon else ""
         buttons.append([
-            InlineKeyboardButton(
+            tg.InlineKeyboardButton(
                 f"📁 {d}/{display_icon}",
                 callback_data=f"manage_plugins:{new_rel_path}"
             )
@@ -126,9 +123,9 @@ async def send_plugins_menu(target: Message, rel_path: str = "", edit: bool = Tr
     # 列出文件
     for f in files:
         mod_name = f"{current_module_prefix}.{f}"
-        status_icon = "✅" if manager.is_module_enabled(mod_name) else "❌"
+        status_icon = "✅" if app.manager.is_module_enabled(mod_name) else "❌"
         buttons.append([
-            InlineKeyboardButton(
+            tg.InlineKeyboardButton(
                 f"📄 {f}: {status_icon}",
                 callback_data=f"toggle_mod:{mod_name}:{rel_path}"
             )
@@ -139,21 +136,21 @@ async def send_plugins_menu(target: Message, rel_path: str = "", edit: bool = Tr
     if rel_path:
         # 计算父目录
         parent_path = ".".join(rel_path.split(".")[:-1])
-        nav_buttons.append(InlineKeyboardButton("⬅️ 返回上级", callback_data=f"manage_plugins:{parent_path}"))
+        nav_buttons.append(tg.InlineKeyboardButton("⬅️ 返回上级", callback_data=f"manage_plugins:{parent_path}"))
     else:
-        nav_buttons.append(InlineKeyboardButton("⬅️ 返回主菜单", callback_data="back_to_settings"))
+        nav_buttons.append(tg.InlineKeyboardButton("⬅️ 返回主菜单", callback_data="back_to_settings"))
     
     # 全部操作按钮 (仅在最末级目录，即没有子文件夹的目录显示)
     if files and not dirs:
         bulk_buttons = [
-            InlineKeyboardButton("✅ 全部开启", callback_data=f"bulk_enable:{rel_path}"),
-            InlineKeyboardButton("❌ 全部禁用", callback_data=f"bulk_disable:{rel_path}")
+            tg.InlineKeyboardButton("✅ 全部开启", callback_data=f"bulk_enable:{rel_path}"),
+            tg.InlineKeyboardButton("❌ 全部禁用", callback_data=f"bulk_disable:{rel_path}")
         ]
         buttons.append(bulk_buttons)
     
     buttons.append(nav_buttons)
     
-    keyboard = InlineKeyboardMarkup(buttons)
+    keyboard = tg.InlineKeyboardMarkup(buttons)
     display_path = f"plugins/user/{rel_path.replace('.', '/')}" if rel_path else "plugins/user"
     text = f"🔌 **插件管理**\n当前路径: `{display_path}`\n\n点击文件夹进入，点击文件切换开关："
     
@@ -163,41 +160,41 @@ async def send_plugins_menu(target: Message, rel_path: str = "", edit: bool = Tr
         else:
             await target.reply(text, reply_markup=keyboard)
     except Exception as e:
-        logger.error(f"发送插件菜单失败: {e}")
+        app.logger.error(f"发送插件菜单失败: {e}")
 
-@Client.on_callback_query(filters.regex(r"^manage_plugins:(.*)$"))
-async def manage_plugins_handler(client: Client, callback_query: CallbackQuery):
-    if callback_query.from_user.id != manager.owner_id:
+@tg.Client.on_callback_query(tg.filters.regex(r"^manage_plugins:(.*)$"))
+async def manage_plugins_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
     
     rel_path = callback_query.matches[0].group(1)
     await send_plugins_menu(callback_query.message, rel_path=rel_path)
 
-@Client.on_callback_query(filters.regex(r"^back_to_settings$"))
-async def back_to_settings_handler(client: Client, callback_query: CallbackQuery):
-    if callback_query.from_user.id != manager.owner_id:
+@tg.Client.on_callback_query(tg.filters.regex(r"^back_to_settings$"))
+async def back_to_settings_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
     await send_settings_menu(callback_query.message, edit=True)
 
-@Client.on_callback_query(filters.regex(r"^toggle_mod:(.+):(.*)$"))
-async def toggle_mod_handler(client: Client, callback_query: CallbackQuery):
-    if callback_query.from_user.id != manager.owner_id:
+@tg.Client.on_callback_query(tg.filters.regex(r"^toggle_mod:(.+):(.*)$"))
+async def toggle_mod_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
     
     module_name = callback_query.matches[0].group(1)
     rel_path = callback_query.matches[0].group(2)
     
-    enabled = await manager.toggle_module(module_name)
+    enabled = await app.manager.toggle_module(module_name)
     
     await callback_query.answer(f"已{'开启' if enabled else '禁用'}模块: {module_name}")
     await send_plugins_menu(callback_query.message, rel_path=rel_path, edit=True)
 
-@Client.on_callback_query(filters.regex(r"^bulk_(enable|disable):(.*)$"))
-async def bulk_toggle_handler(client: Client, callback_query: CallbackQuery):
-    if callback_query.from_user.id != manager.owner_id:
+@tg.Client.on_callback_query(tg.filters.regex(r"^bulk_(enable|disable):(.*)$"))
+async def bulk_toggle_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
     
@@ -215,20 +212,20 @@ async def bulk_toggle_handler(client: Client, callback_query: CallbackQuery):
         return
         
     if action == "enable":
-        await manager.enable_all_in_path(target_modules)
+        await app.manager.enable_all_in_path(target_modules)
         await callback_query.answer(f"已开启 {len(target_modules)} 个插件")
     else:
-        await manager.disable_all_in_path(target_modules)
+        await app.manager.disable_all_in_path(target_modules)
         await callback_query.answer(f"已禁用 {len(target_modules)} 个插件")
         
     await send_plugins_menu(callback_query.message, rel_path=rel_path, edit=True)
 
-@Client.on_callback_query(filters.regex(r"^set_prefix$"))
-async def set_prefix_callback_handler(client: Client, callback_query: CallbackQuery):
+@tg.Client.on_callback_query(tg.filters.regex(r"^set_prefix$"))
+async def set_prefix_callback_handler(client: tg.Client, callback_query: tg.CallbackQuery):
     """
     处理修改前缀的回调
     """
-    if callback_query.from_user.id != manager.owner_id:
+    if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
 
@@ -245,7 +242,7 @@ async def set_prefix_callback_handler(client: Client, callback_query: CallbackQu
             await callback_query.message.reply("❌ 前缀太长了。")
             return
             
-        await manager.set_prefix(new_prefix)
+        await app.manager.set_prefix(new_prefix)
         await callback_query.message.reply(f"✅ 指令前缀已修改为 `{new_prefix}`。\n⚠️ 注意：前缀修改需要重启程序后才能完全生效。")
         
         # 刷新菜单

@@ -1,13 +1,13 @@
 import asyncio
-from core import manager, Client, filters, Message, API_ID, API_HASH, logger, enums
+from core import tg, db, app
 
-@Client.bot_command("start", "开始交互", filters=filters.private)
-async def start_handler(client: Client, message: Message):
+@tg.Client.bot_command("start", "开始交互", filters=tg.filters.private)
+async def start_handler(client: tg.Client, message: tg.Message):
     # 只有 Assistant Bot 才会加载这个插件
     await message.reply("你好！我是登录辅助机器人。\n请发送 /login 开始获取 Session String 并启动人形脚本。")
 
-@Client.bot_command("login", "登录 Userbot", filters=filters.private)
-async def login_handler(client: Client, message: Message):
+@tg.Client.bot_command("login", "登录 Userbot", filters=tg.filters.private)
+async def login_handler(client: tg.Client, message: tg.Message):
     chat_id = message.chat.id
     
     # 1. 询问手机号
@@ -19,7 +19,7 @@ async def login_handler(client: Client, message: Message):
     try:
         # 2. 发送验证码
         # 使用 in_memory=True 且不使用 ":memory:" 字符串作为名称
-        temp_client = Client("temp_login_session", api_id=API_ID, api_hash=API_HASH, in_memory=True)
+        temp_client = tg.Client("temp_login_session", api_id=app.API_ID, api_hash=app.API_HASH, in_memory=True)
         await temp_client.connect()
         
         code_info = await temp_client.send_code(phone_number)
@@ -54,10 +54,10 @@ async def login_handler(client: Client, message: Message):
         # 6. 自动更新配置并启动 Userbot
         await message.reply("登录成功！正在为您自动保存配置并启动人形脚本...")
         
-        if await manager.start_userbot(session_string):
+        if await app.manager.start_userbot(session_string):
             # 获取当前前缀用于通知
-            prefix = manager.prefix
-            owner_id = manager.owner_id
+            prefix = app.manager.prefix
+            owner_id = app.manager.owner_id
             
             success_msg = (
                 "✅ **人形脚本已成功启动并绑定！**\n\n"
@@ -68,11 +68,11 @@ async def login_handler(client: Client, message: Message):
             await message.reply(success_msg)
             
             # 如果当前会话不是在私聊中，也给 Owner 发个私聊通知
-            if message.chat.type != enums.ChatType.PRIVATE:
+            if message.chat.type != tg.enums.ChatType.PRIVATE:
                 await client.send_message(owner_id, success_msg)
         else:
             await message.reply(f"❌ 自动启动失败，但 Session 已保存。请尝试重启程序。\n\nSession String:\n`{session_string}`")
 
     except Exception as e:
-        logger.exception("登录过程中出现异常")
+        app.logger.exception("登录过程中出现异常")
         await message.reply(f"❌ 登录失败：{str(e)}")

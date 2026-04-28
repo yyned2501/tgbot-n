@@ -61,14 +61,25 @@ graph TD
     Client --> Logger
     
     Plugins[plugins/*] --> CoreInit[core/__init__.py]
-    CoreInit --> Manager
-    CoreInit --> Client
-    CoreInit --> Config
-    CoreInit --> Logger
-    CoreInit --> Database
+    CoreInit --> TG[core/tg.py]
+    CoreInit --> DB[core/db.py]
+    CoreInit --> APP[core/app.py]
+    
+    TG --> Client[core/client.py]
+    DB --> Database[core/database.py]
+    DB --> Models[core/models/*]
+    APP --> Manager[core/manager.py]
+    APP --> Config[core/config.py]
+    APP --> Logger[core/logger.py]
     
     Scripts[scripts/*] --> CoreInit
 ```
 
 ## 4. 修改协议 (Modification Protocol)
 在进行任何代码修改前，如果涉及模块间的调用关系变化，**必须**先更新本文件中的“引用拓扑图”部分。
+
+## 5. 子门面导出规范 (Sub-facade Export)
+为了避免 `core/__init__.py` 过度臃肿，采用分组导出模式：
+- `core.tg`: 包含 Client, filters, types, enums 等 Telegram 相关组件。
+- `core.db`: 包含数据库 Session, 模型, 设置读写函数。
+- `core.app`: 包含管理器 (manager), 配置常量, 日志工具。

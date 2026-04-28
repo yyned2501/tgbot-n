@@ -1,8 +1,8 @@
 import asyncio
-from core import Client, filters, Message, PREFIX
+from core import tg, app
 
-@Client.on_message(filters.me & filters.command("id", PREFIX))
-async def get_id(client: Client, message: Message):
+@tg.Client.on_message(tg.filters.me & tg.filters.command("id", app.PREFIX))
+async def get_id(client: tg.Client, message: tg.Message):
     """
     查询当前聊天或回复用户的 ID
     """

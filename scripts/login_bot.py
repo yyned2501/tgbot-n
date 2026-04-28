@@ -6,24 +6,24 @@ import toml
 # 将项目根目录添加到 sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core import Client, filters, idle, Message, API_ID, API_HASH, BOT_TOKEN, logger, update_session_string
+from core import tg, app
 
 async def main():
     # 注意：这里使用 Bot 身份登录
-    bot = Client(
+    bot = tg.Client(
         "login_bot",
-        api_id=API_ID,
-        api_hash=API_HASH,
-        bot_token=BOT_TOKEN,
+        api_id=app.API_ID,
+        api_hash=app.API_HASH,
+        bot_token=app.BOT_TOKEN,
         in_memory=True
     )
 
-    @bot.on_message(filters.command("start") & filters.private)
-    async def start_handler(client: Client, message: Message):
+    @bot.on_message(tg.filters.command("start") & tg.filters.private)
+    async def start_handler(client: tg.Client, message: tg.Message):
         await message.reply("你好！我是登录辅助机器人。\n请发送 /login 开始获取 Session String。")
 
-    @bot.on_message(filters.command("login") & filters.private)
-    async def login_handler(client: Client, message: Message):
+    @bot.on_message(tg.filters.command("login") & tg.filters.private)
+    async def login_handler(client: tg.Client, message: tg.Message):
         chat_id = message.chat.id
         
         # 1. 询问手机号
@@ -33,7 +33,7 @@ async def main():
         try:
             # 2. 发送验证码
             # 使用 in_memory=True 且不使用 ":memory:" 字符串作为名称，有时能解决某些环境下的数据库错误
-            temp_client = Client("temp_login_session", api_id=API_ID, api_hash=API_HASH, in_memory=True)
+            temp_client = tg.Client("temp_login_session", api_id=app.API_ID, api_hash=app.API_HASH, in_memory=True)
             await temp_client.connect()
             
             code_info = await temp_client.send_code(phone_number)
@@ -58,26 +58,26 @@ async def main():
             # 5. 获取 Session String
             session_string = await temp_client.export_session_string()
             
-            # 自动更新配置
-            if update_session_string(session_string):
-                await message.reply(f"登录成功！\n\nSession String 已自动保存到 `config/config.toml`。\n\n你可以现在启动 `main.py` 了。")
-            else:
-                await message.reply(f"登录成功！但自动保存失败，请手动复制：\n\n`{session_string}`")
+            # 自动更新配置 (注意：此处逻辑需要根据新架构重新实现)
+            # if update_session_string(session_string):
+            #     await message.reply(f"登录成功！\n\nSession String 已自动保存到 `config/config.toml`。\n\n你可以现在启动 `main.py` 了。")
+            # else:
+            await message.reply(f"登录成功！请手动复制 Session String 并保存到数据库或配置文件：\n\n`{session_string}`")
             
             await temp_client.disconnect()
 
         except Exception as e:
-            logger.exception("登录失败")
+            app.logger.exception("登录失败")
             await message.reply(f"登录失败：{str(e)}")
 
-    logger.info("登录辅助机器人启动中...")
+    app.logger.info("登录辅助机器人启动中...")
     try:
         await bot.start()
     except Exception as e:
-        logger.exception("启动失败")
+        app.logger.exception("启动失败")
         return
-    logger.info("登录辅助机器人已启动...")
-    await idle()
+    app.logger.info("登录辅助机器人已启动...")
+    await tg.idle()
     await bot.stop()
 
 if __name__ == "__main__":

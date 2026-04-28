@@ -47,9 +47,9 @@ class AppManager:
         except Exception:
             self._disabled_modules = set()
         
-        # 同步更新 core.PREFIX 变量
+        # 同步更新 core.app.PREFIX 变量
         import core
-        core.PREFIX = self._prefix
+        core.app.PREFIX = self._prefix
         
         logger.info(f"配置已加载: Owner={self._owner_id}, Prefix='{self._prefix}', DisabledModules={len(self._disabled_modules)}")
 
@@ -62,9 +62,9 @@ class AppManager:
         self._prefix = prefix
         await set_setting("prefix", prefix)
         logger.info(f"指令前缀已更新为: {prefix}")
-        # 同步更新 core 模块中的 PREFIX 变量（如果存在）
+        # 同步更新 core 模块中的 app.PREFIX 变量（如果存在）
         import core
-        core.PREFIX = prefix
+        core.app.PREFIX = prefix
 
     async def set_session_string(self, session_string: str):
         self._session_string = session_string

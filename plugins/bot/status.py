@@ -1,27 +1,27 @@
-from core import Client, filters, Message, manager
+from core import tg, app
 
-@Client.bot_command("status", "查看运行状态")
-async def status_handler(client: Client, message: Message):
+@tg.Client.bot_command("status", "查看运行状态")
+async def status_handler(client: tg.Client, message: tg.Message):
     # 检查是否是 Owner
-    if message.from_user.id != manager.owner_id:
+    if message.from_user.id != app.manager.owner_id:
         await message.reply("❌ 您没有权限执行此操作。")
         return
 
-    user_status = "✅ 运行中" if manager.user and manager.user.is_connected else "❌ 未启动"
-    bot_status = "✅ 运行中" if manager.bot and manager.bot.is_connected else "❌ 未启动"
+    user_status = "✅ 运行中" if app.manager.user and app.manager.user.is_connected else "❌ 未启动"
+    bot_status = "✅ 运行中" if app.manager.bot and app.manager.bot.is_connected else "❌ 未启动"
     
     status_text = (
         "🤖 **机器人状态报告**\n\n"
         f"👤 **Userbot**: {user_status}\n"
         f"🤖 **Assistant Bot**: {bot_status}\n"
-        f"🆔 **Owner ID**: `{manager.owner_id}`"
+        f"🆔 **Owner ID**: `{app.manager.owner_id}`"
     )
     
     await message.reply(status_text)
 
-@Client.bot_command("help", "显示帮助信息")
-async def help_handler(client: Client, message: Message):
-    if message.from_user.id != manager.owner_id:
+@tg.Client.bot_command("help", "显示帮助信息")
+async def help_handler(client: tg.Client, message: tg.Message):
+    if message.from_user.id != app.manager.owner_id:
         return
 
     help_text = (
@@ -35,13 +35,13 @@ async def help_handler(client: Client, message: Message):
     )
     await message.reply(help_text)
 
-@Client.bot_command("userhelp", "查看 Userbot 功能汇总")
-async def userhelp_handler(client: Client, message: Message):
-    if message.from_user.id != manager.owner_id:
+@tg.Client.bot_command("userhelp", "查看 Userbot 功能汇总")
+async def userhelp_handler(client: tg.Client, message: tg.Message):
+    if message.from_user.id != app.manager.owner_id:
         await message.reply("❌ 您没有权限执行此操作。")
         return
 
-    plugin_info = manager.get_user_plugin_info()
+    plugin_info = app.manager.get_user_plugin_info()
     if not plugin_info:
         await message.reply("📭 未找到任何 Userbot 插件。")
         return
@@ -62,6 +62,6 @@ async def userhelp_handler(client: Client, message: Message):
             text += f"\n📂 **{category.capitalize()}**\n"
         
         status_icon = "✅" if info["enabled"] else "❌"
-        text += f"{status_icon} `{manager.prefix}{info['name']}` - {info['description']}\n"
+        text += f"{status_icon} `{app.manager.prefix}{info['name']}` - {info['description']}\n"
 
     await message.reply(text)

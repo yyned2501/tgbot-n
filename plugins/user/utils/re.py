@@ -1,8 +1,8 @@
 import asyncio
-from core import Client, filters, Message, PREFIX, logger, errors
+from core import tg, app
 
-@Client.on_message(filters.me & filters.command("re", PREFIX))
-async def forward_to_group(client: Client, message: Message):
+@tg.Client.on_message(tg.filters.me & tg.filters.command("re", app.PREFIX))
+async def forward_to_group(client: tg.Client, message: tg.Message):
     """
     重复发送消息 (转发或复制)
     """
@@ -33,8 +33,8 @@ async def forward_to_group(client: Client, message: Message):
                         message.chat.id,
                         message_thread_id=message.message_thread_id,
                     )
-            except (errors.Forbidden, errors.FloodWait):
+            except (tg.errors.Forbidden, tg.errors.FloodWait):
                 break
             except Exception as e:
-                logger.error(f"Repeat error: {e}")
+                app.logger.error(f"Repeat error: {e}")
                 break

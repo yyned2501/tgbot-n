@@ -1,17 +1,17 @@
 import re
 from datetime import datetime
-from core import Client, filters, Message, Base, async_session, logger, get_setting, ZhuqueResult
+from core import tg, db, app
 from scripts.filters import create_bot_filter
 
 GROUPID = -1002262543959
 BOTID = 5697370563
 
-@Client.on_message(
-    filters.chat(GROUPID)
+@tg.Client.on_message(
+    tg.filters.chat(GROUPID)
     & create_bot_filter(BOTID)
-    & filters.regex(r"已结算: 结果为 (\d+) (.)")
+    & tg.filters.regex(r"已结算: 结果为 (\d+) (.)")
 )
-async def zhuque_handler(client: Client, message: Message):
+async def zhuque_handler(client: tg.Client, message: tg.Message):
     """
     监听并记录 Zhuque 压大小结果
     触发逻辑：监听结算通知消息，并从其回复的消息中获取投注详情
@@ -64,9 +64,9 @@ async def zhuque_handler(client: Client, message: Message):
         )
 
         # 6. 保存到数据库
-        async with async_session() as session:
+        async with db.async_session() as session:
             async with session.begin():
-                new_record = ZhuqueResult(
+                new_record = db.ZhuqueResult(
                     final_result=final_result,
                     big_total=big_total,
                     small_total=small_total,
@@ -75,9 +75,9 @@ async def zhuque_handler(client: Client, message: Message):
                 )
                 session.add(new_record)
 
-        logger.info(
+        app.logger.info(
             f"✅ Zhuque 结果已记录: {'大' if final_result == 1 else '小'} | 大总计: {big_total:,} | 小总计: {small_total:,}"
         )
 
     except Exception as e:
-        logger.error(f"❌ 解析或记录 Zhuque 结果时发生错误: {e}")
+        app.logger.error(f"❌ 解析或记录 Zhuque 结果时发生错误: {e}")

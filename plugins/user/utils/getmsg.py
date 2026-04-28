@@ -1,10 +1,10 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from core import Client, filters, Message, PREFIX, manager, logger
+from core import tg, app
 
-@Client.on_message(filters.command("getmsg", PREFIX) & filters.me)
-async def get_message(client: Client, message: Message):
+@tg.Client.on_message(tg.filters.command("getmsg", app.PREFIX) & tg.filters.me)
+async def get_message(client: tg.Client, message: tg.Message):
     """
     获取消息信息并由 Bot 发送给 Owner
     """
@@ -12,7 +12,7 @@ async def get_message(client: Client, message: Message):
         await message.edit("❌ 请回复一条消息以获取其信息。")
         return
 
-    if not manager.bot:
+    if not app.manager.bot:
         await message.edit("❌ Assistant Bot 未启动，无法发送消息。")
         return
 
@@ -42,19 +42,19 @@ async def get_message(client: Client, message: Message):
             f.write(str(reply))
         
         # 使用 Bot 发送文档给 Owner
-        if manager.owner_id:
-            await manager.bot.send_document(
-                chat_id=manager.owner_id,
+        if app.manager.owner_id:
+            await app.manager.bot.send_document(
+                chat_id=app.manager.owner_id,
                 document=str(file_path),
                 caption=f"📋 消息详情\n来自: `{reply.chat.id}`\n消息 ID: `{reply.id}`"
             )
             await message.delete()
-            logger.info(f"已获取消息 {reply.id} 并通过 Bot 发送")
+            app.logger.info(f"已获取消息 {reply.id} 并通过 Bot 发送")
         else:
             await message.edit("❌ Owner ID 未设置，无法发送。")
             
     except Exception as e:
-        logger.error(f"获取消息失败: {e}")
+        app.logger.error(f"获取消息失败: {e}")
         await message.edit(f"❌ 获取消息失败: {e}")
     finally:
         # 删除临时文件
@@ -62,4 +62,4 @@ async def get_message(client: Client, message: Message):
             try:
                 file_path.unlink()
             except Exception as e:
-                logger.error(f"删除临时文件失败: {e}")
+                app.logger.error(f"删除临时文件失败: {e}")

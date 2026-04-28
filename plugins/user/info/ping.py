@@ -1,8 +1,8 @@
 import time
-from core import Client, filters, Message, PREFIX
+from core import tg, app
 
-@Client.on_message(filters.command("ping", PREFIX) & filters.me)
-async def ping(client: Client, message: Message):
+@tg.Client.on_message(tg.filters.command("ping", app.PREFIX) & tg.filters.me)
+async def ping(client: tg.Client, message: tg.Message):
     start = time.time()
     msg = await message.edit("Pinging...")
     end = time.time()
