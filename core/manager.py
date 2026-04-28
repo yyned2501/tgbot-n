@@ -168,6 +168,45 @@ class AppManager:
                     logger.error(f"无法导入根目录插件 {f}: {e}")
         logger.info(f"插件模块预加载完成。根目录插件数量: {count}")
 
+    def get_user_plugin_info(self) -> List[dict]:
+        """
+        获取 Userbot 插件的详细信息 (指令, 说明, 状态)
+        """
+        modules = self._get_plugin_modules("plugins/user", prefix="user")
+        info_list = []
+        for mod_name in modules:
+            full_mod_name = f"plugins.{mod_name}"
+            try:
+                # 模块应该已经被 pre-load 了，所以 importlib.import_module 很快
+                module = importlib.import_module(full_mod_name)
+                
+                # 尝试获取模块文档字符串作为说明
+                doc = module.__doc__.strip() if module.__doc__ else ""
+                
+                # 如果模块没有文档，尝试找第一个函数的文档
+                if not doc:
+                    for attr_name in dir(module):
+                        attr = getattr(module, attr_name)
+                        if callable(attr) and not attr_name.startswith("_") and attr.__doc__:
+                            doc = attr.__doc__.strip()
+                            break
+                
+                if not doc:
+                    doc = "无说明"
+                
+                # 指令名默认为文件名
+                cmd_name = mod_name.split(".")[-1]
+                
+                info_list.append({
+                    "module": full_mod_name,
+                    "name": cmd_name,
+                    "description": doc.split('\n')[0], # 只取第一行
+                    "enabled": self.is_module_enabled(full_mod_name)
+                })
+            except Exception as e:
+                logger.error(f"获取插件信息失败 {full_mod_name}: {e}")
+        return info_list
+
     def init_apps(self):
         """
         初始化 Client 实例

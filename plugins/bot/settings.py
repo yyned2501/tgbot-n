@@ -1,6 +1,8 @@
 import os
-from core import Client, filters, Message, CallbackQuery, manager, get_setting, set_setting, logger
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from core import (
+    Client, filters, Message, CallbackQuery, manager, 
+    get_setting, set_setting, logger, InlineKeyboardMarkup, InlineKeyboardButton
+)
 
 @Client.bot_command("settings", "系统设置")
 async def settings_handler(client: Client, message: Message):

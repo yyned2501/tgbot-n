@@ -6,7 +6,7 @@ from .manager import manager
 from .logger import logger
 from pyrogram import filters, enums, idle, errors
 from pyrogram.filters import Filter
-from pyrogram.types import Message, CallbackQuery, InlineQuery
+from pyrogram.types import Message, CallbackQuery, InlineQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 # 导出动态配置
 PREFIX = manager.prefix
@@ -22,6 +22,8 @@ __all__ = [
     "Message", 
     "CallbackQuery", 
     "InlineQuery",
+    "InlineKeyboardMarkup",
+    "InlineKeyboardButton",
     "API_ID",
     "API_HASH",
     "BOT_TOKEN",
