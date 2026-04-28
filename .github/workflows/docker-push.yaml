@@ -1,8 +1,9 @@
 name: Build and Push Docker Image on Release
 
 on:
-  release:
-    types: [published] # 仅在正式发布 Release 时触发
+  push:
+    tags:
+      - 'v*' # 在版本 tag 推送时直接构建并上传 Docker 镜像
 
 jobs:
   build-and-push:
@@ -19,7 +20,7 @@ jobs:
           # 替换为你的 Docker Hub 镜像名
           images: ${{ secrets.DOCKERHUB_USERNAME }}/tgbot-n
           tags: |
-            # 使用 Release Tag，例如 v1.2.3
+            # 使用 Git Tag，例如 v1.2.3
             type=ref,event=tag
             # 同时始终更新 latest 标签
             type=raw,value=latest
