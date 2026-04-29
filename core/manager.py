@@ -1,6 +1,7 @@
 import os
 import importlib
 import json
+import inspect
 from typing import Dict, List, Optional, Set
 from .client import Client
 from . import config
@@ -187,7 +188,10 @@ class AppManager:
                 if not doc:
                     for attr_name in dir(module):
                         attr = getattr(module, attr_name)
-                        if callable(attr) and not attr_name.startswith("_") and attr.__doc__:
+                        if (callable(attr) 
+                            and not attr_name.startswith("_") 
+                            and attr.__doc__ 
+                            and inspect.getmodule(attr) == module):
                             doc = attr.__doc__.strip()
                             break
                 

@@ -1,6 +1,6 @@
 import asyncio
 from core import tg, db, app
-from plugins.bot.settings import send_settings_menu
+from plugins.bot.admin.settings import send_settings_menu
 
 @tg.Client.bot_command("start", "开始交互", filters=tg.filters.private)
 async def start_handler(client: tg.Client, message: tg.Message):

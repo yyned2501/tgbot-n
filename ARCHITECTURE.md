@@ -19,7 +19,10 @@ tgbot-n/
 │   ├── default.toml        # 默认配置模板
 │   └── config.toml         # 用户自定义配置 (私密，不提交)
 ├── plugins/                # 插件目录
-│   ├── bot/                # 辅助机器人插件 (如登录、状态查询)
+│   ├── bot/                # 辅助机器人插件
+│   │   ├── auth/           # 登录授权类 (如 login)
+│   │   ├── admin/          # 管理配置类 (如 settings)
+│   │   └── info/           # 状态信息类 (如 status)
 │   └── user/               # 人形脚本插件
 │       ├── info/           # 信息查询类 (如 id、ping)
 │       ├── utils/          # 工具类 (如 dme、re、getmsg)
