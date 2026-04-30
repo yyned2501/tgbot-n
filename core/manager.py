@@ -322,6 +322,31 @@ class AppManager:
         if self.bot:
             await self.bot.stop()
 
+    async def restart(self):
+        """
+        重启脚本
+        """
+        import sys
+        import os
+        
+        logger.info("程序正在重启...")
+        
+        # 1. 尝试优雅停止 Userbot (如果正在运行)
+        if self.user:
+            try:
+                await self.user.stop()
+            except Exception as e:
+                logger.error(f"停止 Userbot 失败: {e}")
+        
+        # 2. 预留一点时间让日志输出
+        import asyncio
+        await asyncio.sleep(1)
+        
+        # 3. 重启进程
+        # 注意：不要停止 self.bot，因为我们通常在 bot 的回调中执行此操作
+        # os.execl 会在 Windows 上启动新进程并退出当前进程，操作系统会回收资源
+        os.execl(sys.executable, sys.executable, *sys.argv)
+
     async def send_bot_message(self, text: str):
         """
         使用 Assistant Bot 向 Owner 发送消息

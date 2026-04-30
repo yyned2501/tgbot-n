@@ -7,8 +7,8 @@ async def status_handler(client: tg.Client, message: tg.Message):
         await message.reply("❌ 您没有权限执行此操作。")
         return
 
-    user_status = "✅ 运行中" if app.manager.user and app.manager.user.is_connected else "❌ 未启动"
-    bot_status = "✅ 运行中" if app.manager.bot and app.manager.bot.is_connected else "❌ 未启动"
+    user_status = "✅ 运行中" if app.manager.user and app.manager.user.is_connected else "🚫 未启动"
+    bot_status = "✅ 运行中" if app.manager.bot and app.manager.bot.is_connected else "🚫 未启动"
     
     status_text = (
         "🤖 **机器人状态报告**\n\n"
@@ -61,7 +61,7 @@ async def userhelp_handler(client: tg.Client, message: tg.Message):
             current_category = category
             text += f"\n📂 **{category.capitalize()}**\n"
         
-        status_icon = "✅" if info["enabled"] else "❌"
+        status_icon = "✅" if info["enabled"] else "🚫"
         text += f"{status_icon} `{app.manager.prefix}{info['name']}` - {info['description']}\n"
 
     await message.reply(text)

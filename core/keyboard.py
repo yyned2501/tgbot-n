@@ -81,7 +81,7 @@ class KeyboardFactory:
         return InlineKeyboardButton(text, callback_data=callback_data)
 
     @staticmethod
-    def close_button(callback_data: str = "close_message", text: str = "🗑️ 关闭") -> InlineKeyboardButton:
+    def close_button(callback_data: str = "close_message", text: str = "❌ 关闭") -> InlineKeyboardButton:
         """返回关闭按钮对象"""
         return InlineKeyboardButton(text, callback_data=callback_data)
 
