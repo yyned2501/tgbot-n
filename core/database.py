@@ -132,7 +132,7 @@ async def init_db():
     global engine, _session_factory, _is_initialized, _is_using_sqlite
     
     # 导入所有模型以确保它们被注册到 Base.metadata
-    from .models import ZhuqueResult 
+    from .models import ZhuqueResult, BonusLog
 
     if _is_initialized:
         # 如果已经初始化过，只需确保表结构同步
