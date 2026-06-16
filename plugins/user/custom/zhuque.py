@@ -1,5 +1,7 @@
+import asyncio
 import re
 from datetime import datetime
+from sqlalchemy.exc import InterfaceError, OperationalError
 from core import tg, db, app
 from scripts.filters import create_bot_filter
 
@@ -64,16 +66,25 @@ async def zhuque_handler(client: tg.Client, message: tg.Message):
         )
 
         # 6. 保存到数据库
-        async with db.async_session() as session:
-            async with session.begin():
-                new_record = db.ZhuqueResult(
-                    final_result=final_result,
-                    big_total=big_total,
-                    small_total=small_total,
-                    created_at=created_at,
-                    settlement_time=settlement_time,
-                )
-                session.add(new_record)
+        for attempt in range(2):
+            try:
+                async with db.async_session() as session:
+                    async with session.begin():
+                        new_record = db.ZhuqueResult(
+                            final_result=final_result,
+                            big_total=big_total,
+                            small_total=small_total,
+                            created_at=created_at,
+                            settlement_time=settlement_time,
+                        )
+                        session.add(new_record)
+                break
+            except (InterfaceError, OperationalError) as e:
+                if attempt == 0 and "connection is closed" in str(e).lower():
+                    await db.async_session.remove()
+                    await asyncio.sleep(0)
+                    continue
+                raise
 
         app.logger.info(
             f"✅ Zhuque 结果已记录: {'大' if final_result == 1 else '小'} | 大总计: {big_total:,} | 小总计: {small_total:,}"
