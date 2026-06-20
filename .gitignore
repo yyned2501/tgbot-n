@@ -22,7 +22,8 @@ thumbs.db
 .pytest_cache/
 
 # Logs and data
-*.log
+*.log*
+
 *.sqlite3
 *.db
 

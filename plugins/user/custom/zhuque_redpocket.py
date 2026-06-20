@@ -47,9 +47,17 @@ async def grab_zhuque_redpocket(client: tg.Client, message: tg.Message):
         app.logger.info(f"⚡ 侦测到朱雀红包: {redpocket_name} (发件人: {giver_user})，启动自动秒抢...")
         
         while retry_times < max_retries:
-            result_message = await client.request_callback_answer(
-                message.chat.id, message.id, callback_data
-            )
+            # request_callback_answer 内部 retries=1，网络抖动易失败，在此加外层防护
+            try:
+                result_message = await client.request_callback_answer(
+                    message.chat.id, message.id, callback_data
+                )
+            except Exception:
+                # 网络/API 临时故障，继续下一次点击尝试，不中断抢红包流程
+                retry_times += 1
+                await asyncio.sleep(0.15)
+                continue
+
             await asyncio.sleep(0.15)  # 重试延迟 150ms 保持较高连击速度且不易封禁
             
             # 解析点击结果
@@ -75,7 +83,7 @@ async def grab_zhuque_redpocket(client: tg.Client, message: tg.Message):
             retry_times += 1
             
     except Exception as e:
-        app.logger.error(f"❌ 抢朱雀红包时发生异常: {e}")
+        app.logger.warning(f"⚠️ 抢朱雀红包失败（已达最大尝试次数 {max_retries}）: {e}")
 
 
 @tg.Client.on_message(
