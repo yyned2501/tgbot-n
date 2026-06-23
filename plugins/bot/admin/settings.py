@@ -212,26 +212,26 @@ async def send_plugins_menu(target: tg.Message, rel_path: str = "", edit: bool =
     
     kb = tg.Keyboards()
     
-    # 列出子目录
+    # 列出子目录（每行最多2个）
     dir_buttons = []
     for d in dirs:
         new_rel_path = f"{rel_path}.{d}" if rel_path else d
         status_icon = get_directory_status(new_rel_path)
         display_icon = f" {status_icon}" if status_icon else ""
         dir_buttons.append(tg.Keyboards.button(f"📁 {d}{display_icon}", callback_data=f"manage_plugins:{new_rel_path}"))
-    
+
     if dir_buttons:
-        kb.add_buttons(dir_buttons)
+        kb.add_buttons(dir_buttons, max_cols=2)
     
-    # 列出文件
+    # 列出文件（每行最多2个，留够空间显示状态）
     file_buttons = []
     for f in files:
         mod_name = f"{current_module_prefix}.{f}"
         status_icon = "✅" if app.manager.is_module_enabled(mod_name) else "🚫"
         file_buttons.append(tg.Keyboards.button(f"📄 {f}: {status_icon}", callback_data=f"toggle_mod:{mod_name}:{rel_path}"))
-    
+
     if file_buttons:
-        kb.add_buttons(file_buttons)
+        kb.add_buttons(file_buttons, max_cols=2)
     
     # 全部操作按钮 (仅在最末级目录，即没有子文件夹的目录显示)
     if files and not dirs:
