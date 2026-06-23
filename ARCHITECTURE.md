@@ -26,7 +26,8 @@ tgbot-n/
 │   └── user/               # 人形脚本插件
 │       ├── info/           # 信息查询类 (如 id、ping)
 │       ├── utils/          # 工具类 (如 dme、re、getmsg)
-│       └── custom/         # 特定功能/第三方插件 (如 zhuque)
+│       ├── custom/         # 特定功能/第三方插件 (如 zhuque 压大小)
+│       └── red_packet/     # 红包自动抢模块 (癫影按钮红包、红雀红包等)
 ├── scripts/                # 独立辅助脚本 (如初始登录工具)
 ├── utils/                  # 通用工具函数
 ├── logs/                   # 日志文件存放目录

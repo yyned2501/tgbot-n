@@ -20,6 +20,7 @@ tgbot-n/
 ├── core/                   # 核心框架 (Client 封装、配置、数据库、日志)
 ├── config/                 # 配置文件 (default.toml, config.toml)
 ├── plugins/                # 插件目录 (bot/ 机器人插件, user/ 人形脚本插件)
+│   └── red_packet/         # 红包自动抢模块
 ├── scripts/                # 辅助脚本 (如登录工具)
 ├── utils/                  # 通用工具函数
 └── ARCHITECTURE.md         # 详细架构文档
