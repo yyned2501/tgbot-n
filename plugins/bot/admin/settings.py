@@ -51,6 +51,7 @@ async def logout_confirm_handler(client: tg.Client, callback_query: tg.CallbackQ
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
 
+    await callback_query.answer()
     await send_logout_confirm(callback_query.message, edit=True)
 
 async def send_logout_confirm(target: tg.Message, edit: bool = True):
@@ -88,6 +89,7 @@ async def logout_execute_handler(client: tg.Client, callback_query: tg.CallbackQ
         return
     
     try:
+        await callback_query.answer()
         await app.manager.logout()
         await callback_query.edit_message_text("✅ **已成功退出登录**\n\n所有 Session 数据已清除，人形脚本已停止。您可以发送 /login 重新登录。")
     except Exception as e:
@@ -111,6 +113,7 @@ async def restart_confirm_handler(client: tg.Client, callback_query: tg.Callback
     )
     
     text = "🔄 **确认重启脚本？**\n\n重启期间脚本将暂时无法使用，大约需要几秒钟时间。"
+    await callback_query.answer()
     await callback_query.edit_message_text(text, reply_markup=keyboard)
 
 @tg.Client.on_callback_query(tg.filters.regex(r"^restart_execute$"))
@@ -122,6 +125,7 @@ async def restart_execute_handler(client: tg.Client, callback_query: tg.Callback
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
     
+    await callback_query.answer()
     await callback_query.edit_message_text("🔄 **正在重启中，请稍候...**")
     
     # 延迟一小会儿确保消息已发送
@@ -138,6 +142,7 @@ async def close_message_handler(client: tg.Client, callback_query: tg.CallbackQu
     """
     统一处理关闭/删除消息
     """
+    await callback_query.answer()
     try:
         await callback_query.message.delete()
     except Exception:
@@ -269,6 +274,7 @@ async def manage_plugins_handler(client: tg.Client, callback_query: tg.CallbackQ
         return
     
     rel_path = callback_query.matches[0].group(1)
+    await callback_query.answer()
     await send_plugins_menu(callback_query.message, rel_path=rel_path)
 
 @tg.Client.on_callback_query(tg.filters.regex(r"^back_to_settings$"))
@@ -276,6 +282,7 @@ async def back_to_settings_handler(client: tg.Client, callback_query: tg.Callbac
     if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
+    await callback_query.answer()
     await send_settings_menu(callback_query.message, edit=True)
 
 @tg.Client.on_callback_query(tg.filters.regex(r"^toggle_mod:(.+):(.*)$"))
@@ -329,6 +336,7 @@ async def set_prefix_callback_handler(client: tg.Client, callback_query: tg.Call
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
 
+    await callback_query.answer()
     chat_id = callback_query.message.chat.id
     
     # 询问新前缀
