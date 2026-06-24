@@ -19,9 +19,14 @@ tgbot-n/
 ├── main.py                 # 程序入口
 ├── core/                   # 核心框架 (Client 封装、配置、数据库、日志)
 ├── config/                 # 配置文件 (default.toml, config.toml)
-├── plugins/                # 插件目录 (bot/ 机器人插件, user/ 人形脚本插件)
-│   └── red_packet/         # 红包自动抢模块
-├── scripts/                # 辅助脚本 (如登录工具)
+├── plugins/                # 插件目录
+│   ├── bot/                # 辅助机器人插件 (auth, admin, info)
+│   └── user/               # 人形脚本插件
+│       ├── info/           # 信息查询类 (id, ping)
+│       ├── utils/          # 工具类 (dme, re, getmsg)
+│       ├── gamble/         # 赌博类 (zhuque 压大小)
+│       └── red_packet/     # 红包自动抢模块 (癫影、朱雀)
+├── scripts/                # 辅助脚本 (登录工具、通知工具)
 ├── utils/                  # 通用工具函数
 └── ARCHITECTURE.md         # 详细架构文档
 ```
