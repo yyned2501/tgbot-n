@@ -4,6 +4,7 @@ from decimal import Decimal
 from pyrogram.types import InlineKeyboardMarkup
 from core import tg, db, app
 from scripts.filters import create_bot_filter, reply_to_me
+from scripts.notify import notify_owner
 
 # 配置常量 (朱雀站点信息)
 TARGET_CHATS = [-1001833464786, -1002262543959]  # 监听的群组 ID
@@ -67,7 +68,22 @@ async def grab_zhuque_redpocket(client: tg.Client, message: tg.Message):
                 if match_result:
                     bonus_amount = Decimal(match_result.group(1))
                     app.logger.info(f"🎉 抢红包成功！获得 {bonus_amount} 灵石 | 尝试次数: {retry_times + 1}")
-                    
+
+                    # 通知 Owner
+                    asyncio.create_task(
+                        notify_owner(
+                            "朱雀红包-已抢",
+                            icon="🟡",
+                            fields={
+                                "🎁 红包内容": redpocket_name,
+                                "👤 发包者": giver_user,
+                                "💰 获得": f"{bonus_amount} 灵石",
+                                "🔄 尝试次数": str(retry_times + 1),
+                                "📎 消息链接": getattr(message, "link", ""),
+                            },
+                        )
+                    )
+
                     # 4. 写入通用魔力值流水账单 (BonusLog)
                     async with db.async_session() as session:
                         async with session.begin():
@@ -84,6 +100,17 @@ async def grab_zhuque_redpocket(client: tg.Client, message: tg.Message):
             
     except Exception as e:
         app.logger.warning(f"⚠️ 抢朱雀红包失败（已达最大尝试次数 {max_retries}）: {e}")
+        asyncio.create_task(
+            notify_owner(
+                "朱雀红包-未抢到",
+                icon="❌",
+                fields={
+                    "🎁 红包内容": redpocket_name if 'redpocket_name' in locals() else "未知",
+                    "🔄 尝试次数": f"{max_retries}（已达上限）",
+                    "⚠️ 错误": str(e),
+                },
+            )
+        )
 
 
 @tg.Client.on_message(
@@ -103,7 +130,19 @@ async def log_zhuque_pie(client: tg.Client, message: tg.Message):
             
         bonus_amount = Decimal(match.group(1))
         app.logger.info(f"🎁 被馅饼砸中！获得 {bonus_amount} 灵石，正在写入流水...")
-        
+
+        # 通知 Owner
+        asyncio.create_task(
+            notify_owner(
+                "朱雀馅饼",
+                icon="🎁",
+                fields={
+                    "💰 获得": f"{bonus_amount} 灵石",
+                    "📎 消息链接": getattr(message, "link", ""),
+                },
+            )
+        )
+
         # 写入通用魔力值流水账单 (BonusLog)
         async with db.async_session() as session:
             async with session.begin():

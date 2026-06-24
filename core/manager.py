@@ -303,7 +303,20 @@ class AppManager:
     async def start_all(self):
         if self.bot:
             logger.info("正在启动 Assistant Bot...")
-            await self.bot.start()
+            try:
+                await self.bot.start()
+            except Exception as e:
+                if "database is locked" in str(e):
+                    logger.warning(f"Bot 会话文件被锁定，尝试清理后重试: {e}")
+                    import os as _os
+                    session_path = self.bot.name + ".session"
+                    for f in [session_path, session_path + "-journal", session_path + "-wal"]:
+                        if _os.path.exists(f):
+                            _os.remove(f)
+                    logger.info("已清理 Bot 会话文件，重新启动...")
+                    await self.bot.start()
+                else:
+                    raise
             # 同步机器人命令菜单
             await self.bot.sync_bot_commands()
 
