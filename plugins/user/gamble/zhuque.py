@@ -1,7 +1,7 @@
 import asyncio
 import re
 from datetime import datetime
-from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import InterfaceError, OperationalError, IntegrityError
 from core import tg, db, app
 from scripts.filters import create_bot_filter
 
@@ -65,26 +65,32 @@ async def zhuque_handler(client: tg.Client, message: tg.Message):
             else datetime.now()
         )
 
-        # 6. 保存到数据库
-        for attempt in range(2):
-            try:
-                async with db.async_session() as session:
-                    async with session.begin():
-                        new_record = db.ZhuqueResult(
-                            final_result=final_result,
-                            big_total=big_total,
-                            small_total=small_total,
-                            created_at=created_at,
-                            settlement_time=settlement_time,
-                        )
-                        session.add(new_record)
-                break
-            except (InterfaceError, OperationalError) as e:
-                if attempt == 0 and "connection is closed" in str(e).lower():
-                    await db.async_session.remove()
-                    await asyncio.sleep(0)
-                    continue
-                raise
+        # 6. 入库（全局写锁 + 数据库唯一约束，防止多账号并发重复写入）
+        async with db.write_lock:
+            for attempt in range(2):
+                try:
+                    async with db.async_session() as session:
+                        async with session.begin():
+                            new_record = db.ZhuqueResult(
+                                final_result=final_result,
+                                big_total=big_total,
+                                small_total=small_total,
+                                created_at=created_at,
+                                settlement_time=settlement_time,
+                            )
+                            session.add(new_record)
+                    break
+                except IntegrityError:
+                    app.logger.info(
+                        f"⏭️ Zhuque 结果已存在 (created_at={created_at})，跳过重复记录"
+                    )
+                    return
+                except (InterfaceError, OperationalError) as e:
+                    if attempt == 0 and "connection is closed" in str(e).lower():
+                        await db.async_session.remove()
+                        await asyncio.sleep(0)
+                        continue
+                    raise
 
         app.logger.info(
             f"✅ Zhuque 结果已记录: {'大' if final_result == 1 else '小'} | 大总计: {big_total:,} | 小总计: {small_total:,}"

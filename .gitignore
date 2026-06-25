@@ -26,6 +26,7 @@ thumbs.db
 
 *.sqlite3
 *.db
+*.bak
 
 # Config
 config/config.toml

@@ -60,7 +60,7 @@ def _is_already_taken(result_text: str) -> bool:
     return any(k in result_text for k in keywords)
 
 
-def _fire_notify(message: tg.Message, result_text: str, *, success: bool) -> None:
+def _fire_notify(message: tg.Message, result_text: str, *, success: bool, owner_id: int = 0) -> None:
     """拼装通知字段并发射（fire-and-forget）。"""
     chat_title = getattr(message.chat, "title", "") if message.chat else ""
     msg_link = getattr(message, "link", "")
@@ -68,6 +68,7 @@ def _fire_notify(message: tg.Message, result_text: str, *, success: bool) -> Non
         notify_owner(
             "癫影积分红包-已抢" if success else "癫影积分红包-未抢到",
             icon="🟡" if success else "❌",
+            owner_id=owner_id,
             fields={
                 "🏠 所在群组": f"{chat_title}\n   群ID: {message.chat.id}",
                 "📩 抢包结果": result_text,
@@ -86,8 +87,9 @@ def _fire_notify(message: tg.Message, result_text: str, *, success: bool) -> Non
 )
 async def snatch_dianyingpai_packet(client: tg.Client, message: tg.Message):
     """检测癫影积分红包，随机顺序尝试未抢按钮。"""
-    # 去重
-    key = f"{message.chat.id}:{message.id}"
+    # 去重（按账号隔离，防止多 userbot 共享模块级缓存互相干扰）
+    owner_id = getattr(client, "_owner_id", 0)
+    key = f"{owner_id}:{message.chat.id}:{message.id}"
     _prune_clicked()
     if key in _clicked:
         return
@@ -99,7 +101,7 @@ async def snatch_dianyingpai_packet(client: tg.Client, message: tg.Message):
         app.logger.debug(f"[癫影红包] 无可点按钮，跳过 msg={message.id}")
         return
 
-    app.logger.info(f"[癫影红包] 发现红包 msg={message.id}，可用按钮: {len(positions)}")
+    app.logger.info(f"[癫影红包] 发现红包 msg={message.id}，可用按钮: {len(positions)}，owner_id={owner_id}")
 
     # 随机打乱点击顺序，避免总是抢同一个位置
     random.shuffle(positions)
@@ -118,7 +120,7 @@ async def snatch_dianyingpai_packet(client: tg.Client, message: tg.Message):
 
             # 抢到了
             app.logger.info(f"[癫影红包] 🎉 抢到积分红包! chat={message.chat.id} msg={message.id}")
-            _fire_notify(message, result_text, success=True)
+            _fire_notify(message, result_text, success=True, owner_id=owner_id)
             return
 
         except Exception as e:
@@ -127,4 +129,4 @@ async def snatch_dianyingpai_packet(client: tg.Client, message: tg.Message):
 
     # 所有可点按钮已被抢完
     app.logger.info(f"[癫影红包] 所有可点按钮已被抢完 msg={message.id}")
-    _fire_notify(message, "所有格子已被抢完", success=False)
+    _fire_notify(message, "所有格子已被抢完", success=False, owner_id=owner_id)

@@ -12,7 +12,7 @@ class BonusLog(Base):
     
     website = Column(String(50), nullable=False)  # 站点名称，如 "zhuque", "ptvicomo", "redleaves"
     
-    # 行为类型，如 "redpocket" (抢红包), "pie" (馅饼), "transfer_in" (转账收入), 
+    # 行为类型，如 "redpocket" (抢红包), "pie" (馅饼), "transfer_in" (转账收入),
     # "transfer_out" (转账支出), "lottery" (抽奖), "signin" (签到)
     action_type = Column(String(50), nullable=False, index=True)
     
@@ -24,3 +24,6 @@ class BonusLog(Base):
     
     # 关联的 Telegram 消息 ID（可选，方便溯源）
     message_id = Column(BigInteger, nullable=True)
+    
+    # 所属账号的 Telegram User ID（多用户支持，区分各账号流水）
+    owner_id = Column(BigInteger, nullable=False, index=True, comment="所属账号的 Telegram User ID")

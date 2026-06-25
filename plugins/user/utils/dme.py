@@ -1,14 +1,14 @@
 import asyncio
 import contextlib
-from core import tg, app
+from core import tg
 
 """
 删除自己所发的消息
 """
 
 @tg.Client.on_message(
-    tg.filters.me & 
-    tg.filters.command("dme", app.PREFIX)
+    tg.filters.me &
+    tg.user_command("dme")
 )
 async def self_delatemessage(client: tg.Client, message: tg.Message):
     """Deletes specific amount of messages you sent."""
@@ -17,7 +17,8 @@ async def self_delatemessage(client: tg.Client, message: tg.Message):
     
     if len(message.command) < 2:
         if not message.reply_to_message:
-            return await message.edit(f"命令格式不对，请输入 `{app.PREFIX}dme [数量]`")
+            prefix = getattr(client, "_prefix", "") or "."
+            return await message.edit(f"命令格式不对，请输入 `{prefix}dme [数量]`")
         count = 1 # 默认删一条？或者根据回复删
     
     try:

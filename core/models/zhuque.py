@@ -11,5 +11,5 @@ class ZhuqueResult(Base):
     final_result = Column(Integer)  # 1 为大, 0 为小
     big_total = Column(BigInteger)  # 押大合计金额
     small_total = Column(BigInteger)  # 押小合计金额
-    created_at = Column(DateTime)  # 游戏创建时间
+    created_at = Column(DateTime, unique=True)  # 游戏创建时间（唯一，防止多账号重复入库）
     settlement_time = Column(DateTime)  # 游戏结算时间

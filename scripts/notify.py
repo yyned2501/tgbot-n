@@ -12,6 +12,7 @@ async def notify_owner(
     icon: str = "📢",
     fields: dict[str, str] | None = None,
     text: str | None = None,
+    owner_id: int | None = None,
 ) -> None:
     """
     向 Owner 发送一条格式化通知。
@@ -35,9 +36,15 @@ async def notify_owner(
         icon: 标题前缀图标，默认 📢
         fields: 标签 → 值 的映射，按插入顺序逐行渲染
         text: 追加在字段之后的自由文本块
+        owner_id: 可选，触发通知的账号 ID，会在标题中显示
     """
     try:
-        parts = [f"{icon} {title}"]
+        # 如果提供了 owner_id，在标题后追加账号标识
+        display_title = title
+        if owner_id:
+            display_title = f"{title} [账号: {owner_id}]"
+
+        parts = [f"{icon} {display_title}"]
         if fields:
             parts.append("")  # 空行分隔
             for label, value in fields.items():
@@ -47,6 +54,6 @@ async def notify_owner(
         if text:
             parts.append(text)
         message = "\n".join(parts).strip()
-        await app.manager.send_bot_message(message)
+        await app.manager.send_bot_message(message, target_id=owner_id or 0)
     except Exception as e:
         app.logger.debug(f"[notify] 通知发送失败: {e}")

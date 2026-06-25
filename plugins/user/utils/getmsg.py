@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from core import tg, app
 
-@tg.Client.on_message(tg.filters.command("getmsg", app.PREFIX) & tg.filters.me)
+@tg.Client.on_message(tg.user_command("getmsg") & tg.filters.me)
 async def get_message(client: tg.Client, message: tg.Message):
     """
     获取消息信息并由 Bot 发送给 Owner

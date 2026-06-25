@@ -14,4 +14,4 @@ username = ""
 password = ""
 
 [database]
-url = "postgresql+asyncpg://user:password@localhost:5432/dbname"
+url = "sqlite+aiosqlite:///data.db"

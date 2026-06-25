@@ -1,106 +1,296 @@
+"""
+系统设置插件 - 支持多账号管理
+
+功能:
+- /settings - 系统设置菜单 (所有绑定用户可访问，非管理员看到自己的)
+- /admin - 管理员面板 (仅 Bot Owner)
+- /accounts - 账号管理菜单 (Bot Owner 看到所有，普通用户看到自己的)
+- 插件管理 (按账号隔离)
+- 退出登录 (单个账号)
+"""
 import os
 import asyncio
 from core import tg, db, app
+from core.logger import logger
 
-@tg.Client.bot_command("settings", "系统设置")
+
+# ==================== 设置主菜单 ====================
+
+@tg.Client.bot_command("settings", "个人设置")
 async def settings_handler(client: tg.Client, message: tg.Message):
     """
-    显示系统设置菜单
+    显示个人设置菜单 (所有绑定用户可访问)
     """
-    # 60秒后自动删除指令消息
     asyncio.create_task(tg.delete_later(message))
-    
+
+    user_id = message.from_user.id
+
+    # 检查是否已绑定账号
+    account = app.account_manager.get_account(user_id)
+    if not account:
+        await message.reply("📭 **您还没有绑定账号**\n\n请发送 /login 开始绑定。")
+        return
+
+    await send_settings_menu(message, user_id=user_id)
+
+
+@tg.Client.bot_command("admin", "管理员面板")
+async def admin_handler(client: tg.Client, message: tg.Message):
+    """
+    显示管理员面板 (仅 Bot Owner)
+    """
+    asyncio.create_task(tg.delete_later(message))
+
     if message.from_user.id != app.manager.owner_id:
         await message.reply("❌ 您没有权限执行此操作。")
         return
 
-    await send_settings_menu(message)
+    await send_admin_menu(message)
 
-async def send_settings_menu(target: tg.Message, edit: bool = False):
+
+async def send_settings_menu(target: tg.Message, user_id: int = 0, edit: bool = False):
     """
-    发送或编辑设置菜单
+    发送或编辑个人设置菜单（所有用户统一布局）
     """
-    prefix = app.manager.prefix
-    
+    if not user_id:
+        user_id = target.chat.id if hasattr(target, 'chat') else 0
+
+    # 获取该用户的前缀
+    account = app.account_manager.get_account(user_id)
+    if account:
+        prefix = getattr(account, "_prefix", "") or app.manager.prefix
+    else:
+        prefix = app.manager.prefix
+
     kb = tg.Keyboards()
     kb.add_buttons([
-        tg.Keyboards.button(f"⌨️ 指令前缀: {prefix}", callback_data="set_prefix"),
-        tg.Keyboards.button("🔌 插件管理", callback_data="manage_plugins:"),
-        tg.Keyboards.button("🔄 重启脚本", callback_data="restart_confirm"),
-        tg.Keyboards.button("🚪 退出登录", callback_data="logout_confirm")
+        tg.Keyboards.button(f"⌨️ 指令前缀: {prefix}", callback_data=f"sp:{user_id}"),
+        tg.Keyboards.button("🔌 插件管理", callback_data=f"upl:{user_id}"),
+        tg.Keyboards.button("📋 我的账号", callback_data=f"mac:{user_id}"),
+        tg.Keyboards.button("🔄 重启我的 Userbot", callback_data=f"rs:{user_id}"),
     ])
     kb.row().add_button("❌ 关闭菜单", callback_data="close_message")
     keyboard = kb.build()
-    
-    text = "⚙️ **系统设置**\n\n点击下方按钮切换功能开关或修改配置："
-    
+
+    text = "⚙️ **个人设置**\n\n管理您的账号和偏好设置："
+
     try:
         if edit:
             await target.edit_text(text, reply_markup=keyboard)
         else:
             await target.reply(text, reply_markup=keyboard)
     except Exception as e:
-        app.logger.error(f"发送设置菜单失败: {e}")
+        logger.error(f"发送设置菜单失败: {e}")
 
-@tg.Client.on_callback_query(tg.filters.regex(r"^logout_confirm$"))
-async def logout_confirm_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+
+async def send_admin_menu(target: tg.Message, edit: bool = False):
     """
-    处理退出登录确认 (来自回调)
+    发送管理员面板（仅 Bot Owner 可访问）
     """
+    account_count = app.account_manager.account_count
+
+    kb = tg.Keyboards()
+    kb.add_buttons([
+        tg.Keyboards.button(f"👥 账号管理 ({account_count})", callback_data="accounts_list"),
+        tg.Keyboards.button("🔄 重启脚本", callback_data="restart_confirm"),
+    ])
+    kb.row().add_button("❌ 关闭菜单", callback_data="close_message")
+    keyboard = kb.build()
+
+    text = (
+        "🛡️ **管理员面板**\n\n"
+        f"当前在线账号数: **{account_count}**\n"
+        "管理所有账号和全局设置："
+    )
+
+    try:
+        if edit:
+            await target.edit_text(text, reply_markup=keyboard)
+        else:
+            await target.reply(text, reply_markup=keyboard)
+    except Exception as e:
+        logger.error(f"发送管理员面板失败: {e}")
+
+
+# ==================== 账号管理 ====================
+
+@tg.Client.bot_command("accounts", "管理绑定的账号")
+async def accounts_handler(client: tg.Client, message: tg.Message, user_id: int = None):
+    """
+    显示账号列表
+    - Bot Owner: 看到所有账号
+    - 普通用户: 看到自己的账号
+
+    参数:
+        user_id: 可选，显式指定用户 ID（用于从回调进入时传入真实用户 ID）
+    """
+    asyncio.create_task(tg.delete_later(message))
+
+    # 优先使用传入的 user_id，否则从消息中获取
+    # 注意：从回调进入时，message 是 Bot 发送的消息，from_user 是 Bot 自身
+    if user_id is None:
+        user_id = message.from_user.id
+    is_owner = user_id == app.manager.owner_id
+
+    # 获取账号信息
+    owner_id_param = None if is_owner else user_id
+    accounts_info = await app.account_manager.get_accounts_info(owner_id_param)
+
+    if not accounts_info:
+        if is_owner:
+            text = "📭 **当前没有绑定的账号**\n\n其他用户可以通过 /login 绑定他们的账号。"
+        else:
+            text = "📭 **您还没有绑定账号**\n\n请发送 /login 开始绑定。"
+        await message.reply(text)
+        return
+
+    # 构建账号列表消息
+    lines = ["👥 **已绑定的账号**\n"]
+    for i, info in enumerate(accounts_info, 1):
+        status = "🟢 在线" if info["is_connected"] else "🔴 离线"
+        lines.append(
+            f"{i}. {status}\n"
+            f"   🆔 `{info['owner_id']}`\n"
+            f"   👤 {info['first_name']} (@{info['username']})\n"
+        )
+
+    # Bot Owner 可以看到管理按钮
+    if is_owner and accounts_info:
+        kb = tg.Keyboards()
+        for info in accounts_info:
+            kb.add_button(
+                f"🔴 移除 {info['first_name']}",
+                callback_data=f"remove_account:{info['owner_id']}",
+            )
+        kb.row().add_button("❌ 关闭", callback_data="close_message")
+        keyboard = kb.build()
+        await message.reply("\n".join(lines), reply_markup=keyboard)
+    else:
+        await message.reply("\n".join(lines))
+
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^accounts_list$"))
+async def accounts_list_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """账号列表回调 (从设置菜单进入)"""
     if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
 
     await callback_query.answer()
-    await send_logout_confirm(callback_query.message, edit=True)
+    # 重新触发 accounts 命令逻辑
+    # 注意：callback_query.message 是 Bot 发送的消息，from_user 是 Bot 自身
+    # 因此需要显式传入 callback_query.from_user.id 作为 user_id
+    await accounts_handler(client, callback_query.message, user_id=callback_query.from_user.id)
 
-async def send_logout_confirm(target: tg.Message, edit: bool = True):
-    """
-    发送退出登录确认界面
-    """
-    keyboard = tg.Keyboards.confirm_cancel(
-        confirm_data="logout_execute",
-        cancel_data="back_to_settings",
-        confirm_text="⚠️ 确认退出",
-        cancel_text="取消"
-    )
-    
-    text = (
-        "⚠️ **确认退出登录？**\n\n"
-        "退出后将执行以下操作：\n"
-        "1. 停止当前运行的人形脚本 (Userbot)。\n"
-        "2. 从数据库中清除 Session String。\n"
-        "3. 清除 Owner 绑定信息。\n\n"
-        "**此操作不可撤销，确定继续吗？**"
-    )
-    
-    if edit:
-        await target.edit_text(text, reply_markup=keyboard)
-    else:
-        await target.reply(text, reply_markup=keyboard)
 
-@tg.Client.on_callback_query(tg.filters.regex(r"^logout_execute$"))
-async def logout_execute_handler(client: tg.Client, callback_query: tg.CallbackQuery):
-    """
-    执行退出登录
-    """
+@tg.Client.on_callback_query(tg.filters.regex(r"^remove_account:(\d+)$"))
+async def remove_account_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """移除指定账号"""
     if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
-    
+
+    owner_id = int(callback_query.matches[0].group(1))
+    await callback_query.answer()
+
+    # 确认移除
+    kb = tg.Keyboards.confirm_cancel(
+        confirm_data=f"remove_account_confirm:{owner_id}",
+        cancel_data="accounts_list",
+        confirm_text="⚠️ 确认移除",
+        cancel_text="取消",
+    )
+    await callback_query.edit_message_text(
+        f"⚠️ **确认移除账号 `{owner_id}`？**\n\n"
+        "移除后该账号将停止运行并从数据库中删除。\n"
+        "该操作不可撤销。",
+        reply_markup=kb,
+    )
+
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^remove_account_confirm:(\d+)$"))
+async def remove_account_confirm_handler(
+    client: tg.Client, callback_query: tg.CallbackQuery
+):
+    """执行移除账号"""
+    if callback_query.from_user.id != app.manager.owner_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+
+    owner_id = int(callback_query.matches[0].group(1))
+    await callback_query.answer()
+
     try:
-        await callback_query.answer()
-        await app.manager.logout()
-        await callback_query.edit_message_text("✅ **已成功退出登录**\n\n所有 Session 数据已清除，人形脚本已停止。您可以发送 /login 重新登录。")
+        await app.account_manager.remove_account(owner_id)
+        await callback_query.edit_message_text(
+            f"✅ **已移除账号 `{owner_id}`**\n\n"
+            "该账号已停止运行并从数据库中删除。"
+        )
     except Exception as e:
-        app.logger.error(f"退出登录失败: {e}")
-        await callback_query.answer(f"❌ 退出失败: {e}", show_alert=True)
+        logger.error(f"移除账号 {owner_id} 失败: {e}")
+        await callback_query.answer(f"❌ 移除失败: {e}", show_alert=True)
+
+
+# ==================== 退出登录 (单账号) ====================
+
+@tg.Client.bot_command("logout", "解绑当前账号")
+async def logout_command_handler(client: tg.Client, message: tg.Message):
+    """
+    普通用户解绑自己的账号
+    Bot Owner 可以通过 /accounts 管理所有账号
+    """
+    asyncio.create_task(tg.delete_later(message))
+
+    user_id = message.from_user.id
+
+    # 检查是否有绑定
+    account = app.account_manager.get_account(user_id)
+    if not account:
+        await message.reply("❌ 您还没有绑定账号。\n请发送 /login 开始绑定。")
+        return
+
+    # 确认解绑
+    kb = tg.Keyboards.confirm_cancel(
+        confirm_data=f"self_logout:{user_id}",
+        cancel_data="close_message",
+        confirm_text="⚠️ 确认解绑",
+        cancel_text="取消",
+    )
+    await message.reply(
+        "⚠️ **确认解绑您的账号？**\n\n"
+        "解绑后该账号将停止运行并从数据库中删除。\n"
+        "您可以随时通过 /login 重新绑定。",
+        reply_markup=kb,
+    )
+
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^self_logout:(\d+)$"))
+async def self_logout_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """执行普通用户解绑"""
+    user_id = int(callback_query.matches[0].group(1))
+    if callback_query.from_user.id != user_id:
+        await callback_query.answer("❌ 您没有权限操作其他账号。", show_alert=True)
+        return
+
+    await callback_query.answer()
+    try:
+        await app.account_manager.remove_account(user_id)
+        await callback_query.edit_message_text(
+            "✅ **已成功解绑您的账号**\n\n"
+            "您可以随时通过 /login 重新绑定。"
+        )
+    except Exception as e:
+        logger.error(f"用户 {user_id} 解绑失败: {e}")
+        await callback_query.answer(f"❌ 解绑失败: {e}", show_alert=True)
+
+
+# ==================== 重启 ====================
 
 @tg.Client.on_callback_query(tg.filters.regex(r"^restart_confirm$"))
-async def restart_confirm_handler(client: tg.Client, callback_query: tg.CallbackQuery):
-    """
-    处理重启确认 (来自回调)
-    """
+async def restart_confirm_handler(
+    client: tg.Client, callback_query: tg.CallbackQuery
+):
+    """处理重启确认"""
     if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
@@ -109,48 +299,103 @@ async def restart_confirm_handler(client: tg.Client, callback_query: tg.Callback
         confirm_data="restart_execute",
         cancel_data="back_to_settings",
         confirm_text="🔄 确认重启",
-        cancel_text="取消"
+        cancel_text="取消",
     )
-    
+
     text = "🔄 **确认重启脚本？**\n\n重启期间脚本将暂时无法使用，大约需要几秒钟时间。"
     await callback_query.answer()
     await callback_query.edit_message_text(text, reply_markup=keyboard)
 
+
 @tg.Client.on_callback_query(tg.filters.regex(r"^restart_execute$"))
-async def restart_execute_handler(client: tg.Client, callback_query: tg.CallbackQuery):
-    """
-    执行重启
-    """
+async def restart_execute_handler(
+    client: tg.Client, callback_query: tg.CallbackQuery
+):
+    """执行重启"""
     if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
-    
+
     await callback_query.answer()
     await callback_query.edit_message_text("🔄 **正在重启中，请稍候...**")
-    
-    # 延迟一小会儿确保消息已发送
+
     await asyncio.sleep(1)
-    
+
     try:
         await app.manager.restart()
     except Exception as e:
-        app.logger.error(f"重启失败: {e}")
+        logger.error(f"重启失败: {e}")
         await callback_query.answer(f"❌ 重启失败: {e}", show_alert=True)
 
+
+# ==================== 通用 ====================
+
 @tg.Client.on_callback_query(tg.filters.regex(r"^close_message$"))
-async def close_message_handler(client: tg.Client, callback_query: tg.CallbackQuery):
-    """
-    统一处理关闭/删除消息
-    """
+async def close_message_handler(
+    client: tg.Client, callback_query: tg.CallbackQuery
+):
+    """统一处理关闭/删除消息"""
     await callback_query.answer()
     try:
         await callback_query.message.delete()
     except Exception:
-        # 如果无法删除（例如消息太旧），尝试清空内容
         try:
             await callback_query.edit_message_text("❌ 菜单已关闭")
         except Exception:
             pass
+
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^back_to_settings$"))
+async def back_to_settings_handler(
+    client: tg.Client, callback_query: tg.CallbackQuery
+):
+    """返回个人设置主菜单"""
+    user_id = callback_query.from_user.id
+    await callback_query.answer()
+    await send_settings_menu(callback_query.message, user_id=user_id, edit=True)
+
+
+# ==================== 重启自己的 Userbot ====================
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^rs:(\d+)$"))
+async def restart_self_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """确认重启自己的 Userbot"""
+    user_id = int(callback_query.matches[0].group(1))
+    if callback_query.from_user.id != user_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+
+    await callback_query.answer()
+    keyboard = tg.Keyboards.confirm_cancel(
+        confirm_data=f"rse:{user_id}",
+        cancel_data="back_to_settings",
+        confirm_text="🔄 确认重启",
+    )
+    await callback_query.edit_message_text(
+        "🔄 **确认重启您的 Userbot？**\n\n重启期间您的 Userbot 将暂时离线，大约需要几秒钟。",
+        reply_markup=keyboard,
+    )
+
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^rse:(\d+)$"))
+async def restart_self_execute_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """执行重启自己的 Userbot"""
+    user_id = int(callback_query.matches[0].group(1))
+    if callback_query.from_user.id != user_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+
+    await callback_query.answer()
+    await callback_query.edit_message_text("🔄 **正在重启您的 Userbot，请稍候...**")
+
+    success = await app.account_manager.restart_account(user_id)
+    if success:
+        await callback_query.message.reply("✅ **您的 Userbot 已成功重启！**")
+    else:
+        await callback_query.message.reply("❌ **重启失败。** 请检查账号是否仍然有效。")
+
+
+# ==================== 插件管理 ====================
 
 def get_user_plugins():
     """
@@ -160,7 +405,7 @@ def get_user_plugins():
     modules = []
     if not os.path.exists(root_dir):
         return modules
-        
+
     for root, _, files in os.walk(root_dir):
         for file in files:
             if file.endswith(".py") and file != "__init__.py":
@@ -169,40 +414,115 @@ def get_user_plugins():
                 modules.append(f"plugins.user.{module_name}")
     return sorted(modules)
 
-def get_directory_status(rel_path: str):
-    """
-    获取目录的状态
-    返回: "✅" (全部开启), "🚫" (全部禁用), "🌗" (部分开启), 或 "" (无插件)
-    """
-    all_plugins = get_user_plugins()
-    target_prefix = f"plugins.user.{rel_path}." if rel_path else "plugins.user."
-    target_modules = [m for m in all_plugins if m.startswith(target_prefix)]
-    
-    if not target_modules:
-        return ""
-        
-    enabled_count = sum(1 for m in target_modules if app.manager.is_module_enabled(m))
-    
-    if enabled_count == len(target_modules):
-        return "✅"
-    elif enabled_count == 0:
-        return "🚫"
-    else:
-        return "🌗"
 
-async def send_plugins_menu(target: tg.Message, rel_path: str = "", edit: bool = True):
+
+# ==================== 修改前缀 ====================
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^sp:(\d+)$"))
+async def set_prefix_callback_handler(
+    client: tg.Client, callback_query: tg.CallbackQuery
+):
+    """处理个人修改前缀的回调"""
+    user_id = int(callback_query.matches[0].group(1))
+    if callback_query.from_user.id != user_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+
+    await callback_query.answer()
+    chat_id = callback_query.message.chat.id
+
+    try:
+        ask_prefix = await client.ask(
+            chat_id, "请输入新的指令前缀 (例如 . 或 !):", timeout=60
+        )
+        if not ask_prefix or not ask_prefix.text:
+            return
+
+        new_prefix = ask_prefix.text.strip()
+        if len(new_prefix) > 5:
+            await callback_query.message.reply("❌ 前缀太长了。")
+            return
+
+        await app.account_manager.save_prefix(user_id, new_prefix)
+        # 如果该用户的 userbot 正在运行，立即更新缓存
+        account = app.account_manager.get_account(user_id)
+        if account:
+            account._prefix = new_prefix
+
+        await callback_query.message.reply(
+            f"✅ 指令前缀已修改为 `{new_prefix}`。\n"
+            "⚠️ 注意：前缀修改需要重启 Userbot 后才能对已有命令生效。"
+        )
+
+        await send_settings_menu(callback_query.message, user_id=user_id)
+
+    except Exception as e:
+        await callback_query.message.reply(f"❌ 修改失败: {e}")
+
+
+# ==================== 普通用户功能 ====================
+
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^mac:(\d+)$"))
+async def my_account_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """普通用户查看自己的账号信息"""
+    user_id = int(callback_query.matches[0].group(1))
+    if callback_query.from_user.id != user_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+
+    await callback_query.answer()
+
+    # 获取该用户的账号信息
+    accounts_info = await app.account_manager.get_accounts_info(user_id)
+    if not accounts_info:
+        await callback_query.edit_message_text(
+            "📭 **您还没有绑定账号**\n\n请发送 /login 开始绑定。"
+        )
+        return
+
+    info = accounts_info[0]
+    status = "🟢 在线" if info["is_connected"] else "🔴 离线"
+    text = (
+        f"📋 **我的账号**\n\n"
+        f"状态: {status}\n"
+        f"🆔 `{info['owner_id']}`\n"
+        f"👤 {info['first_name']} (@{info['username']})\n"
+    )
+
+    kb = tg.Keyboards()
+    kb.add_button("🔗 解绑账号", callback_data=f"self_logout:{user_id}")
+    kb.row().add_button("⬅️ 返回", callback_data="back_to_settings")
+    kb.add_button("❌ 关闭", callback_data="close_message")
+
+    await callback_query.edit_message_text(text, reply_markup=kb.build())
+
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^upl:(\d+)$"))
+async def user_plugins_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """普通用户管理自己的插件"""
+    user_id = int(callback_query.matches[0].group(1))
+    if callback_query.from_user.id != user_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+
+    await callback_query.answer()
+    await send_user_plugins_menu(callback_query.message, user_id, edit=True)
+
+
+async def send_user_plugins_menu(target: tg.Message, user_id: int, rel_path: str = "", edit: bool = True):
     """
-    显示插件管理菜单 (分层浏览)
-    rel_path: 相对于 plugins/user 的路径，例如 "info" 或 ""
+    显示普通用户的插件管理菜单 (按用户隔离)
     """
     base_module = "plugins.user"
-    current_module_prefix = f"{base_module}.{rel_path}" if rel_path else base_module
-    
-    # 获取目录内容
+    current_module_prefix = (
+        f"{base_module}.{rel_path}" if rel_path else base_module
+    )
+
     base_dir = os.path.join("plugins", "user", rel_path.replace(".", os.sep))
     dirs = []
     files = []
-    
+
     if os.path.exists(base_dir):
         for item in os.listdir(base_dir):
             full_path = os.path.join(base_dir, item)
@@ -211,150 +531,172 @@ async def send_plugins_menu(target: tg.Message, rel_path: str = "", edit: bool =
                     dirs.append(item)
             elif item.endswith(".py") and item != "__init__.py":
                 files.append(item.replace(".py", ""))
-    
+
     dirs.sort()
     files.sort()
-    
+
     kb = tg.Keyboards()
-    
-    # 列出子目录（每行最多2个）
+
+    # 列出子目录
     dir_buttons = []
     for d in dirs:
         new_rel_path = f"{rel_path}.{d}" if rel_path else d
-        status_icon = get_directory_status(new_rel_path)
+        status_icon = await get_user_directory_status(user_id, new_rel_path)
         display_icon = f" {status_icon}" if status_icon else ""
-        dir_buttons.append(tg.Keyboards.button(f"📁 {d}{display_icon}", callback_data=f"manage_plugins:{new_rel_path}"))
+        dir_buttons.append(
+            tg.Keyboards.button(
+                f"📁 {d}{display_icon}",
+                callback_data=f"ump:{user_id}:{new_rel_path}",
+            )
+        )
 
     if dir_buttons:
         kb.add_buttons(dir_buttons, max_cols=2)
-    
-    # 列出文件（每行最多2个，留够空间显示状态）
+
+    # 列出文件（只传文件名和 rel_path，由 handler 重建完整模块路径以节省 callback_data 长度）
     file_buttons = []
     for f in files:
         mod_name = f"{current_module_prefix}.{f}"
-        status_icon = "✅" if app.manager.is_module_enabled(mod_name) else "🚫"
-        file_buttons.append(tg.Keyboards.button(f"📄 {f}: {status_icon}", callback_data=f"toggle_mod:{mod_name}:{rel_path}"))
+        enabled = await app.account_manager.is_module_enabled(user_id, mod_name)
+        status_icon = "✅" if enabled else "🚫"
+        file_buttons.append(
+            tg.Keyboards.button(
+                f"📄 {f}: {status_icon}",
+                callback_data=f"utm:{user_id}:{rel_path}:{f}",
+            )
+        )
 
     if file_buttons:
         kb.add_buttons(file_buttons, max_cols=2)
-    
-    # 全部操作按钮 (仅在最末级目录，即没有子文件夹的目录显示)
+
+    # 全部操作按钮
     if files and not dirs:
         kb.row()
-        kb.add_button("✅ 全部开启", callback_data=f"bulk_enable:{rel_path}")
-        kb.add_button("🚫 全部禁用", callback_data=f"bulk_disable:{rel_path}")
-    
+        kb.add_button("✅ 全部开启", callback_data=f"ube:{user_id}:{rel_path}")
+        kb.add_button("🚫 全部禁用", callback_data=f"ubd:{user_id}:{rel_path}")
+
     # 导航按钮
     kb.row()
     if rel_path:
-        # 计算父目录
         parent_path = ".".join(rel_path.split(".")[:-1])
-        kb.add_button("⬅️ 返回上级", callback_data=f"manage_plugins:{parent_path}")
+        kb.add_button(
+            "⬅️ 返回上级",
+            callback_data=f"ump:{user_id}:{parent_path}"
+        )
     else:
-        kb.add_button("⬅️ 返回主菜单", callback_data="back_to_settings")
-    
+        kb.add_button("⬅️ 返回设置", callback_data="back_to_settings")
+
     kb.add_button("❌ 关闭", callback_data="close_message")
-    
+
     keyboard = kb.build()
-    display_path = f"plugins/user/{rel_path.replace('.', '/')}" if rel_path else "plugins/user"
-    text = f"🔌 **插件管理**\n当前路径: `{display_path}`\n\n点击文件夹进入，点击文件切换开关："
-    
+    display_path = (
+        f"plugins/user/{rel_path.replace('.', '/')}" if rel_path else "plugins/user"
+    )
+    text = (
+        f"🔌 **我的插件管理**\n当前路径: `{display_path}`\n\n"
+        "点击文件夹进入，点击文件切换开关："
+    )
+
     try:
         if edit:
             await target.edit_text(text, reply_markup=keyboard)
         else:
             await target.reply(text, reply_markup=keyboard)
     except Exception as e:
-        app.logger.error(f"发送插件菜单失败: {e}")
+        logger.error(f"发送用户插件菜单失败: {e}")
 
-@tg.Client.on_callback_query(tg.filters.regex(r"^manage_plugins:(.*)$"))
-async def manage_plugins_handler(client: tg.Client, callback_query: tg.CallbackQuery):
-    if callback_query.from_user.id != app.manager.owner_id:
-        await callback_query.answer("❌ 您没有权限。", show_alert=True)
-        return
-    
-    rel_path = callback_query.matches[0].group(1)
-    await callback_query.answer()
-    await send_plugins_menu(callback_query.message, rel_path=rel_path)
 
-@tg.Client.on_callback_query(tg.filters.regex(r"^back_to_settings$"))
-async def back_to_settings_handler(client: tg.Client, callback_query: tg.CallbackQuery):
-    if callback_query.from_user.id != app.manager.owner_id:
-        await callback_query.answer("❌ 您没有权限。", show_alert=True)
-        return
-    await callback_query.answer()
-    await send_settings_menu(callback_query.message, edit=True)
-
-@tg.Client.on_callback_query(tg.filters.regex(r"^toggle_mod:(.+):(.*)$"))
-async def toggle_mod_handler(client: tg.Client, callback_query: tg.CallbackQuery):
-    if callback_query.from_user.id != app.manager.owner_id:
-        await callback_query.answer("❌ 您没有权限。", show_alert=True)
-        return
-    
-    module_name = callback_query.matches[0].group(1)
-    rel_path = callback_query.matches[0].group(2)
-    
-    enabled = await app.manager.toggle_module(module_name)
-    
-    await callback_query.answer(f"已{'开启' if enabled else '禁用'}模块: {module_name}")
-    await send_plugins_menu(callback_query.message, rel_path=rel_path, edit=True)
-
-@tg.Client.on_callback_query(tg.filters.regex(r"^bulk_(enable|disable):(.*)$"))
-async def bulk_toggle_handler(client: tg.Client, callback_query: tg.CallbackQuery):
-    if callback_query.from_user.id != app.manager.owner_id:
-        await callback_query.answer("❌ 您没有权限。", show_alert=True)
-        return
-    
-    action = callback_query.matches[0].group(1)
-    rel_path = callback_query.matches[0].group(2)
-    
-    # 获取该路径下的所有模块
+async def get_user_directory_status(user_id: int, rel_path: str):
+    """
+    获取指定用户的目录插件状态
+    返回: "✅" (全部开启), "🚫" (全部禁用), "🌗" (部分开启), 或 "" (无插件)
+    """
     all_plugins = get_user_plugins()
     target_prefix = f"plugins.user.{rel_path}." if rel_path else "plugins.user."
-    
-    target_modules = [m for m in all_plugins if m.startswith(target_prefix) or m == target_prefix[:-1]]
-    
+    target_modules = [m for m in all_plugins if m.startswith(target_prefix)]
+
+    if not target_modules:
+        return ""
+
+    enabled_count = 0
+    for m in target_modules:
+        if await app.account_manager.is_module_enabled(user_id, m):
+            enabled_count += 1
+
+    if enabled_count == len(target_modules):
+        return "✅"
+    elif enabled_count == 0:
+        return "🚫"
+    else:
+        return "🌗"
+
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^ump:(\d+):(.*)$"))
+async def user_manage_plugins_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """普通用户浏览插件目录"""
+    user_id = int(callback_query.matches[0].group(1))
+    if callback_query.from_user.id != user_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+
+    rel_path = callback_query.matches[0].group(2)
+    await callback_query.answer()
+    await send_user_plugins_menu(callback_query.message, user_id, rel_path=rel_path)
+
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^utm:(\d+):(.*):(.+)$"))
+async def user_toggle_mod_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """普通用户切换自己的模块"""
+    user_id = int(callback_query.matches[0].group(1))
+    if callback_query.from_user.id != user_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+
+    rel_path = callback_query.matches[0].group(2)
+    file_name = callback_query.matches[0].group(3)
+    # 重建完整模块路径
+    module_name = f"plugins.user.{rel_path}.{file_name}" if rel_path else f"plugins.user.{file_name}"
+
+    enabled = await app.account_manager.toggle_module(user_id, module_name)
+    await callback_query.answer(
+        f"已{'开启' if enabled else '禁用'}模块"
+    )
+
+    await send_user_plugins_menu(callback_query.message, user_id, rel_path=rel_path, edit=True)
+
+
+@tg.Client.on_callback_query(tg.filters.regex(r"^ub([ed]):(\d+):(.*)$"))
+async def user_bulk_toggle_handler(client: tg.Client, callback_query: tg.CallbackQuery):
+    """普通用户批量切换自己的模块"""
+    action_code = callback_query.matches[0].group(1)
+    action = "enable" if action_code == "e" else "disable"
+    user_id = int(callback_query.matches[0].group(2))
+    if callback_query.from_user.id != user_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+
+    rel_path = callback_query.matches[0].group(3)
+
+    all_plugins = get_user_plugins()
+    target_prefix = (
+        f"plugins.user.{rel_path}." if rel_path else "plugins.user."
+    )
+
+    target_modules = [
+        m
+        for m in all_plugins
+        if m.startswith(target_prefix) or m == target_prefix[:-1]
+    ]
+
     if not target_modules:
         await callback_query.answer("该目录下没有可管理的插件。")
         return
-        
+
     if action == "enable":
-        await app.manager.enable_all_in_path(target_modules)
+        await app.account_manager.enable_all_in_path(user_id, target_modules)
         await callback_query.answer(f"已开启 {len(target_modules)} 个插件")
     else:
-        await app.manager.disable_all_in_path(target_modules)
+        await app.account_manager.disable_all_in_path(user_id, target_modules)
         await callback_query.answer(f"已禁用 {len(target_modules)} 个插件")
-        
-    await send_plugins_menu(callback_query.message, rel_path=rel_path, edit=True)
 
-@tg.Client.on_callback_query(tg.filters.regex(r"^set_prefix$"))
-async def set_prefix_callback_handler(client: tg.Client, callback_query: tg.CallbackQuery):
-    """
-    处理修改前缀的回调
-    """
-    if callback_query.from_user.id != app.manager.owner_id:
-        await callback_query.answer("❌ 您没有权限。", show_alert=True)
-        return
-
-    await callback_query.answer()
-    chat_id = callback_query.message.chat.id
-    
-    # 询问新前缀
-    try:
-        ask_prefix = await client.ask(chat_id, "请输入新的指令前缀 (例如 . 或 !):", timeout=60)
-        if not ask_prefix or not ask_prefix.text:
-            return
-        
-        new_prefix = ask_prefix.text.strip()
-        if len(new_prefix) > 5:
-            await callback_query.message.reply("❌ 前缀太长了。")
-            return
-            
-        await app.manager.set_prefix(new_prefix)
-        await callback_query.message.reply(f"✅ 指令前缀已修改为 `{new_prefix}`。\n⚠️ 注意：前缀修改需要重启程序后才能完全生效。")
-        
-        # 刷新菜单
-        await send_settings_menu(callback_query.message)
-        
-    except Exception as e:
-        await callback_query.message.reply(f"❌ 修改失败: {e}")
+    await send_user_plugins_menu(callback_query.message, user_id, rel_path=rel_path, edit=True)

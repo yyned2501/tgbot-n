@@ -1,7 +1,7 @@
 import asyncio
 from core import tg, app
 
-@tg.Client.on_message(tg.filters.me & tg.filters.command("re", app.PREFIX))
+@tg.Client.on_message(tg.filters.me & tg.user_command("re"))
 async def forward_to_group(client: tg.Client, message: tg.Message):
     """
     重复发送消息 (转发或复制)

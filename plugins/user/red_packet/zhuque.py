@@ -22,12 +22,14 @@ async def grab_zhuque_redpocket(client: tg.Client, message: tg.Message):
     """
     监听朱雀红包并自动秒抢，记录获取的魔力值流水
     """
+    owner_id = getattr(client, "_owner_id", 0)
+
     try:
         # 1. 匹配红包细节
         match = message.matches[0] if message.matches else None
         if not match:
             return
-            
+
         redpocket_name = match.group(1)
         giver_user = match.group(3)
 
@@ -45,7 +47,7 @@ async def grab_zhuque_redpocket(client: tg.Client, message: tg.Message):
         retry_times = 0
         max_retries = 200  # 限制最大重试次数以保护账号安全
         
-        app.logger.info(f"⚡ 侦测到朱雀红包: {redpocket_name} (发件人: {giver_user})，启动自动秒抢...")
+        app.logger.info(f"⚡ 侦测到朱雀红包: {redpocket_name} (发件人: {giver_user})，owner_id={owner_id}，启动自动秒抢...")
         
         while retry_times < max_retries:
             # request_callback_answer 内部 retries=1，网络抖动易失败，在此加外层防护
@@ -69,11 +71,12 @@ async def grab_zhuque_redpocket(client: tg.Client, message: tg.Message):
                     bonus_amount = Decimal(match_result.group(1))
                     app.logger.info(f"🎉 抢红包成功！获得 {bonus_amount} 灵石 | 尝试次数: {retry_times + 1}")
 
-                    # 通知 Owner
+                    # 通知对应用户
                     asyncio.create_task(
                         notify_owner(
                             "朱雀红包-已抢",
                             icon="🟡",
+                            owner_id=owner_id,
                             fields={
                                 "🎁 红包内容": redpocket_name,
                                 "👤 发包者": giver_user,
@@ -88,6 +91,7 @@ async def grab_zhuque_redpocket(client: tg.Client, message: tg.Message):
                     async with db.async_session() as session:
                         async with session.begin():
                             record = db.BonusLog(
+                                owner_id=owner_id,
                                 website=SITE_NAME,
                                 action_type="redpocket",
                                 amount=bonus_amount,
@@ -104,6 +108,7 @@ async def grab_zhuque_redpocket(client: tg.Client, message: tg.Message):
             notify_owner(
                 "朱雀红包-未抢到",
                 icon="❌",
+                owner_id=owner_id,
                 fields={
                     "🎁 红包内容": redpocket_name if 'redpocket_name' in locals() else "未知",
                     "🔄 尝试次数": f"{max_retries}（已达上限）",
@@ -123,19 +128,22 @@ async def log_zhuque_pie(client: tg.Client, message: tg.Message):
     """
     自动记录掉馅饼的魔力值变动
     """
+    owner_id = getattr(client, "_owner_id", 0)
+
     try:
         match = message.matches[0] if message.matches else None
         if not match:
             return
-            
+
         bonus_amount = Decimal(match.group(1))
         app.logger.info(f"🎁 被馅饼砸中！获得 {bonus_amount} 灵石，正在写入流水...")
 
-        # 通知 Owner
+        # 通知对应用户
         asyncio.create_task(
             notify_owner(
                 "朱雀馅饼",
                 icon="🎁",
+                owner_id=owner_id,
                 fields={
                     "💰 获得": f"{bonus_amount} 灵石",
                     "📎 消息链接": getattr(message, "link", ""),
@@ -147,6 +155,7 @@ async def log_zhuque_pie(client: tg.Client, message: tg.Message):
         async with db.async_session() as session:
             async with session.begin():
                 record = db.BonusLog(
+                    owner_id=owner_id,
                     website=SITE_NAME,
                     action_type="pie",
                     amount=bonus_amount,

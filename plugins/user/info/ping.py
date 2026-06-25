@@ -1,7 +1,7 @@
 import time
-from core import tg, app
+from core import tg
 
-@tg.Client.on_message(tg.filters.command("ping", app.PREFIX) & tg.filters.me)
+@tg.Client.on_message(tg.user_command("ping") & tg.filters.me)
 async def ping(client: tg.Client, message: tg.Message):
     start = time.time()
     msg = await message.edit("Pinging...")

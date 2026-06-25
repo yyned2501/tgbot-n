@@ -6,10 +6,14 @@ from sqlalchemy.ext.asyncio import (
     async_scoped_session,
     AsyncSession as _AsyncSession,
 )
-from sqlalchemy import select, text
+from sqlalchemy import select, text, delete
 from .config import DATABASE_URL
 from .logger import logger
-from .models import Base, SystemSetting
+from .models import Base, SystemSetting, UserAccount
+
+# 全局写入锁：序列化跨协程的写操作，防止多账号/多任务并发写入导致的数据重复
+# 用法: async with write_lock: ...
+write_lock = asyncio.Lock()
 
 class AsyncSession(_AsyncSession):
     """
@@ -74,6 +78,14 @@ async def set_setting(key: str, value: str):
                 setting = SystemSetting(key=key, value=value)
                 session.add(setting)
 
+async def delete_setting(key: str):
+    """
+    删除系统设置
+    """
+    async with async_session() as session:
+        async with session.begin():
+            await session.execute(delete(SystemSetting).where(SystemSetting.key == key))
+
 async def migrate_from_sqlite():
     """
     从本地 SQLite 迁移数据到当前数据库 (主库)
@@ -125,6 +137,49 @@ async def migrate_from_sqlite():
     finally:
         await sqlite_engine.dispose()
 
+async def migrate_session_to_account():
+    """
+    将旧版 system_settings 中的 session_string 迁移到 UserAccount 表
+    """
+    session_str = await get_setting("session_string", "")
+    if not session_str:
+        return  # 没有旧数据，无需迁移
+
+    owner_id_str = await get_setting("owner_id", "0")
+    owner_id = int(owner_id_str) if owner_id_str and owner_id_str != "0" else 0
+
+    if not owner_id:
+        logger.warning("发现旧版 session_string 但 owner_id 未设置，无法迁移")
+        return
+
+    # 检查是否已迁移过（UserAccount 表中是否已有该 owner_id）
+    async with async_session() as session:
+        result = await session.execute(
+            select(UserAccount).where(UserAccount.owner_id == owner_id)
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            logger.info("UserAccount 已存在，跳过迁移")
+            # 仍然删除旧 session_string 防止重复
+            await delete_setting("session_string")
+            return
+
+        # 创建 UserAccount 记录
+        account = UserAccount(
+            owner_id=owner_id,
+            phone="migrated",
+            session_string=session_str,
+            is_active=True,
+            is_connected=False,
+        )
+        session.add(account)
+        await session.commit()
+
+    # 迁移完成后删除旧 session_string
+    await delete_setting("session_string")
+    logger.info(f"✅ 已成功将旧版 session_string 迁移到 UserAccount (owner_id={owner_id})")
+
+
 async def init_db():
     """
     初始化数据库，包含降级和迁移逻辑
@@ -132,7 +187,7 @@ async def init_db():
     global engine, _session_factory, _is_initialized, _is_using_sqlite
     
     # 导入所有模型以确保它们被注册到 Base.metadata
-    from .models import ZhuqueResult, BonusLog
+    from .models import ZhuqueResult, BonusLog, UserAccount
 
     if _is_initialized:
         # 如果已经初始化过，只需确保表结构同步
@@ -175,7 +230,34 @@ async def init_db():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("数据库表结构同步完成。")
+
+        # 清理 zhuque_results 中的重复记录，然后创建唯一索引
+        # （已有重复数据会阻止 CREATE UNIQUE INDEX，必须先清理）
+        try:
+            async with engine.begin() as conn:
+                # 删除重复行：保留每个 created_at 中 id 最小的那条
+                await conn.execute(
+                    text(
+                        "DELETE FROM zhuque_results WHERE id NOT IN "
+                        "(SELECT MIN(id) FROM zhuque_results GROUP BY created_at)"
+                    )
+                )
+                # 现在可以安全创建唯一索引
+                await conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "idx_zhuque_results_created_at ON zhuque_results(created_at)"
+                    )
+                )
+            logger.info("zhuque_results 唯一索引已就绪。")
+        except Exception as e:
+            logger.warning(f"zhuque_results 唯一索引创建失败（可能数据库不支持）: {e}")
+
         _is_initialized = True
+
+        # 迁移旧版 session_string 到 UserAccount
+        await migrate_session_to_account()
+
     except Exception as e:
         logger.error(f"数据库初始化过程中发生错误: {e}")
         if not use_sqlite:
@@ -186,5 +268,7 @@ async def init_db():
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             _is_initialized = True
+            # 迁移旧版 session_string 到 UserAccount
+            await migrate_session_to_account()
         else:
             raise e

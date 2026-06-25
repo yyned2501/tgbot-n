@@ -1,4 +1,5 @@
 from .manager import manager
+from .account_manager import account_manager
 from .config import API_ID, API_HASH, BOT_TOKEN, PROXY, DATABASE_URL
 from .logger import logger
 
@@ -6,6 +7,6 @@ from .logger import logger
 PREFIX = manager.prefix
 
 __all__ = [
-    "manager", "logger", "PREFIX",
+    "manager", "account_manager", "logger", "PREFIX",
     "API_ID", "API_HASH", "BOT_TOKEN", "PROXY", "DATABASE_URL"
 ]
