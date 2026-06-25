@@ -6,6 +6,7 @@ plugins/user/red_packet/dianying.py
 点任意未抢按钮抢一格，抢到一个即停止。
 """
 import asyncio
+import random
 import re
 import time
 from core import tg, app
@@ -84,7 +85,7 @@ def _fire_notify(message: tg.Message, result_text: str, *, success: bool) -> Non
     group=-9,
 )
 async def snatch_dianyingpai_packet(client: tg.Client, message: tg.Message):
-    """检测癫影积分红包，逐个尝试未抢按钮。"""
+    """检测癫影积分红包，随机顺序尝试未抢按钮。"""
     # 去重
     key = f"{message.chat.id}:{message.id}"
     _prune_clicked()
@@ -99,6 +100,9 @@ async def snatch_dianyingpai_packet(client: tg.Client, message: tg.Message):
         return
 
     app.logger.info(f"[癫影红包] 发现红包 msg={message.id}，可用按钮: {len(positions)}")
+
+    # 随机打乱点击顺序，避免总是抢同一个位置
+    random.shuffle(positions)
 
     # 逐个尝试
     for row, col in positions:
