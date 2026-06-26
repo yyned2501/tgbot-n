@@ -76,7 +76,7 @@ def _is_lucky_packet(message: tg.Message) -> bool:
 
 
 # ─── 自身发言追踪 Handler ────────────────────────────
-@tg.Client.on_message(tg.filters.group & self_filter, group=-101)
+@tg.Client.on_message(tg.filters.group & self_filter, group=-9)
 async def track_self_message(client: tg.Client, message: tg.Message):
     """追踪自己在 ALLOWED_GROUPS 中最后一次发言的 msg_id，写入数据库防重启丢失。"""
     owner_id = getattr(client, "_owner_id", 0)
