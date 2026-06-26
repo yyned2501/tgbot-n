@@ -34,6 +34,11 @@ CLICK_DELAY = 0                  # 点击前等待秒数（可改为正数）
 ALLOWED_GROUPS: list[int] = [-1001326208894]   # 限定群组（空=所有群），如 [-1001326208894]
 INACTIVE_WAIT = 10               # 最近20条无发言时需等待的秒数（天空新规）
 
+# ─── 组合 filter ────────────────────────────────────────
+_base_filter = tg.filters.group
+if ALLOWED_GROUPS:
+    _base_filter = _base_filter & tg.filters.chat(ALLOWED_GROUPS)
+
 # ─── 去重缓存 ──────────────────────────────────────────
 _clicked: dict[str, float] = {}  # "owner_id:chat_id:msg_id" → timestamp
 
@@ -76,21 +81,11 @@ def _is_lucky_packet(message: tg.Message) -> bool:
 
 
 # ─── 自身发言追踪 Handler ────────────────────────────
-@tg.Client.on_message(tg.filters.group & self_filter, group=-9)
+@tg.Client.on_message(_base_filter & self_filter, group=-9)
 async def track_self_message(client: tg.Client, message: tg.Message):
     """追踪自己在 ALLOWED_GROUPS 中最后一次发言的 msg_id，写入数据库防重启丢失。"""
     owner_id = getattr(client, "_owner_id", 0)
-    app.logger.info(
-        f"[天空红包] _track_self_message 触发 owner={owner_id} "
-        f"chat={message.chat.id} msg={message.id}"
-    )
     if not owner_id:
-        app.logger.warning("[天空红包] _track_self_message 跳过：owner_id=0（Bot 账号）")
-        return
-    if ALLOWED_GROUPS and message.chat.id not in ALLOWED_GROUPS:
-        app.logger.warning(
-            f"[天空红包] _track_self_message 跳过：chat={message.chat.id} 不在 ALLOWED_GROUPS"
-        )
         return
     chat_id = message.chat.id
     key = f"{owner_id}:{chat_id}"
@@ -104,7 +99,7 @@ async def track_self_message(client: tg.Client, message: tg.Message):
 
 # ─── Handler ──────────────────────────────────────────
 @tg.Client.on_message(
-    tg.filters.group
+    _base_filter
     & create_bot_filter(BOT_ID),
     group=-9,
 )
@@ -113,10 +108,6 @@ async def snatch_hdsky_red_packet(client: tg.Client, message: tg.Message):
     # 仅 userbot 处理（Bot 账号没有 _owner_id）
     owner_id = getattr(client, "_owner_id", 0)
     if not owner_id:
-        return
-
-    # 群组过滤（空 = 所有群）
-    if ALLOWED_GROUPS and message.chat.id not in ALLOWED_GROUPS:
         return
 
     if not _is_lucky_packet(message):
