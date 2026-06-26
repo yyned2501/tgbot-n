@@ -30,6 +30,8 @@ class Client(PyrogramClient):
             self._owner_id = owner_id
         # _prefix 缓存当前 userbot 的指令前缀（默认 "."，启动后由 account_manager 覆写）
         self._prefix = "."
+        # _stopping 标志：标记客户端正在停止中，用于防止 handle_updates 竞态
+        self._stopping = False
         super().__init__(name, **kwargs)
         self._pending_asks = {}
 
@@ -43,11 +45,36 @@ class Client(PyrogramClient):
             group=-100
         )
 
+    async def stop(self, block: bool = True, clear_handlers: bool = True):
+        """
+        安全的停止方法：等待进行中的 handle_updates 完成后再关闭 storage。
+
+        覆写原因：
+        Pyrogram 原生的 stop() → terminate() → disconnect() 时序中，
+        handle_updates() 从网络层收到 update 后调用 self.storage.update_state()，
+        而此时 disconnect() 已关闭 storage 的 sqlite3 连接，导致：
+          sqlite3.ProgrammingError: Cannot operate on a closed database.
+
+        修复方式：
+        - 设置 _stopping 标志
+        - 短暂让出事件循环，让进行中的 handle_updates 协程有机会完成
+        - 然后才执行原生 stop()
+        """
+        self._stopping = True
+        # 让出控制权：使已启动的 handle_updates 协程能在 storage 关闭前完成
+        for _ in range(5):
+            await asyncio.sleep(0.1)
+        return await super().stop(block=block, clear_handlers=clear_handlers)
+
     def add_handler(self, handler, group: int = 0):
         """
         重写 add_handler，实现：
         1. Bot/Userbot 模块隔离：Bot 不加载 User 插件，Userbot 不加载 Bot 插件
         2. Userbot 模块级开关拦截
+
+        注意：Pyrogram 的 handler 对象是类级别共享的，不能直接修改
+        handler.callback，否则第二个及之后的 Client 实例会拿到被污染的回调。
+        这里为每个实例创建新的 handler 副本。
         """
         from .account_manager import account_manager
         from .logger import logger
@@ -68,17 +95,25 @@ class Client(PyrogramClient):
         # 2. Userbot 模块级开关拦截
         if is_userbot and module_name.startswith("plugins.user"):
             owner_id = self._owner_id
+
             async def wrapped_callback(client, message, *args, **kwargs):
                 try:
                     if not await account_manager.is_module_enabled(owner_id, module_name):
-                        logger.debug(f"[Userbot({owner_id})] 模块 {module_name} 已禁用，跳过")
+                        logger.info(f"[Userbot({owner_id})] 模块 {module_name} 已禁用，跳过")
                         return
                 except Exception as e:
-                    logger.warning(f"[Userbot({owner_id})] 模块检查失败 ({module_name}): {e}，放行")
+                    logger.error(
+                        f"[Userbot({owner_id})] 模块检查异常 ({module_name}): {e}，"
+                        f"为避免误拦，放行处理"
+                    )
                 return await original_callback(client, message, *args, **kwargs)
 
-            handler.callback = wrapped_callback
+            # 创建新 handler 副本，不修改类级别共享的 handler 对象
+            # （否则第二个 Userbot 实例会拿到被修改过的 callback）
+            new_handler = type(handler)(wrapped_callback, handler.filters)
             logger.info(f"[{identity}] 注册 User 插件 handler: {module_name}")
+            super().add_handler(new_handler, group)
+            return
 
         super().add_handler(handler, group)
 
@@ -200,16 +235,18 @@ class Client(PyrogramClient):
     async def ask(self, chat_id, text, timeout=300):
         """
         发送消息并等待回复
+        返回 (sent_message, reply_message)
         """
-        await self.send_message(chat_id, text)
-        
+        sent = await self.send_message(chat_id, text)
+
         # 创建一个 Future 用于等待回复
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         self._pending_asks[chat_id] = future
-        
+
         try:
-            return await asyncio.wait_for(future, timeout)
+            reply = await asyncio.wait_for(future, timeout)
+            return sent, reply
         except asyncio.TimeoutError:
             raise asyncio.TimeoutError("等待回复超时")
         finally:
