@@ -67,7 +67,7 @@ async def send_settings_menu(target: tg.Message, user_id: int = 0, edit: bool = 
         tg.Keyboards.button(f"⌨️ 指令前缀: {prefix}", callback_data=f"sp:{user_id}"),
         tg.Keyboards.button("🔌 插件管理", callback_data=f"upl:{user_id}"),
         tg.Keyboards.button("📋 我的账号", callback_data=f"mac:{user_id}"),
-        tg.Keyboards.button("🔄 重启我的 Userbot", callback_data=f"rs:{user_id}"),
+        tg.Keyboards.button("🔄 重启人形", callback_data=f"rs:{user_id}"),
     ])
     kb.row().add_button("❌ 关闭菜单", callback_data="close_message")
     keyboard = kb.build()
@@ -79,6 +79,8 @@ async def send_settings_menu(target: tg.Message, user_id: int = 0, edit: bool = 
             await target.edit_text(text, reply_markup=keyboard)
         else:
             await target.reply(text, reply_markup=keyboard)
+    except tg.errors.MessageNotModified:
+        pass
     except Exception as e:
         logger.error(f"发送设置菜单失败: {e}")
 
@@ -108,6 +110,8 @@ async def send_admin_menu(target: tg.Message, edit: bool = False):
             await target.edit_text(text, reply_markup=keyboard)
         else:
             await target.reply(text, reply_markup=keyboard)
+    except tg.errors.MessageNotModified:
+        pass
     except Exception as e:
         logger.error(f"发送管理员面板失败: {e}")
 
@@ -171,16 +175,37 @@ async def accounts_handler(client: tg.Client, message: tg.Message, user_id: int 
 
 @tg.Client.on_callback_query(tg.filters.regex(r"^accounts_list$"))
 async def accounts_list_handler(client: tg.Client, callback_query: tg.CallbackQuery):
-    """账号列表回调 (从设置菜单进入)"""
+    """账号列表回调 (从管理员面板进入，原地编辑)"""
     if callback_query.from_user.id != app.manager.owner_id:
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
 
     await callback_query.answer()
-    # 重新触发 accounts 命令逻辑
-    # 注意：callback_query.message 是 Bot 发送的消息，from_user 是 Bot 自身
-    # 因此需要显式传入 callback_query.from_user.id 作为 user_id
-    await accounts_handler(client, callback_query.message, user_id=callback_query.from_user.id)
+
+    accounts_info = await app.account_manager.get_accounts_info()
+    if not accounts_info:
+        await callback_query.edit_message_text("📭 **当前没有绑定的账号**")
+        return
+
+    lines = ["👥 **已绑定的账号**\n"]
+    for i, info in enumerate(accounts_info, 1):
+        status = "🟢 在线" if info["is_connected"] else "🔴 离线"
+        lines.append(
+            f"{i}. {status}\n"
+            f"   🆔 `{info['owner_id']}`\n"
+            f"   👤 {info['first_name']} (@{info['username']})\n"
+        )
+
+    kb = tg.Keyboards()
+    for info in accounts_info:
+        kb.add_button(
+            f"🔴 移除 {info['first_name']}",
+            callback_data=f"remove_account:{info['owner_id']}",
+        )
+    kb.row().add_button("⬅️ 返回", callback_data="back_to_admin")
+    kb.add_button("❌ 关闭", callback_data="close_message")
+
+    await callback_query.edit_message_text("\n".join(lines), reply_markup=kb.build())
 
 
 @tg.Client.on_callback_query(tg.filters.regex(r"^remove_account:(\d+)$"))
@@ -297,7 +322,7 @@ async def restart_confirm_handler(
 
     keyboard = tg.Keyboards.confirm_cancel(
         confirm_data="restart_execute",
-        cancel_data="back_to_settings",
+        cancel_data="back_to_admin",
         confirm_text="🔄 确认重启",
         cancel_text="取消",
     )
@@ -345,6 +370,18 @@ async def close_message_handler(
             pass
 
 
+@tg.Client.on_callback_query(tg.filters.regex(r"^back_to_admin$"))
+async def back_to_admin_handler(
+    client: tg.Client, callback_query: tg.CallbackQuery
+):
+    """返回管理员面板"""
+    if callback_query.from_user.id != app.manager.owner_id:
+        await callback_query.answer("❌ 您没有权限。", show_alert=True)
+        return
+    await callback_query.answer()
+    await send_admin_menu(callback_query.message, edit=True)
+
+
 @tg.Client.on_callback_query(tg.filters.regex(r"^back_to_settings$"))
 async def back_to_settings_handler(
     client: tg.Client, callback_query: tg.CallbackQuery
@@ -372,7 +409,7 @@ async def restart_self_handler(client: tg.Client, callback_query: tg.CallbackQue
         confirm_text="🔄 确认重启",
     )
     await callback_query.edit_message_text(
-        "🔄 **确认重启您的 Userbot？**\n\n重启期间您的 Userbot 将暂时离线，大约需要几秒钟。",
+        "🔄 **确认重启您的人形？**\n\n重启期间您的人形将暂时离线，大约需要几秒钟。",
         reply_markup=keyboard,
     )
 
@@ -428,36 +465,42 @@ async def set_prefix_callback_handler(
         await callback_query.answer("❌ 您没有权限。", show_alert=True)
         return
 
-    await callback_query.answer()
-    chat_id = callback_query.message.chat.id
+    msg = callback_query.message
+    chat_id = msg.chat.id
 
     try:
-        ask_prefix = await client.ask(
+        q_msg, reply = await client.ask(
             chat_id, "请输入新的指令前缀 (例如 . 或 !):", timeout=60
         )
-        if not ask_prefix or not ask_prefix.text:
+        if not reply or not reply.text:
+            await q_msg.delete()
+            await callback_query.answer()
             return
 
-        new_prefix = ask_prefix.text.strip()
+        new_prefix = reply.text.strip()
         if len(new_prefix) > 5:
-            await callback_query.message.reply("❌ 前缀太长了。")
+            await q_msg.delete()
+            await callback_query.answer("❌ 前缀太长了。", show_alert=True)
             return
 
         await app.account_manager.save_prefix(user_id, new_prefix)
-        # 如果该用户的 userbot 正在运行，立即更新缓存
         account = app.account_manager.get_account(user_id)
         if account:
             account._prefix = new_prefix
 
-        await callback_query.message.reply(
-            f"✅ 指令前缀已修改为 `{new_prefix}`。\n"
-            "⚠️ 注意：前缀修改需要重启 Userbot 后才能对已有命令生效。"
+        await q_msg.delete()
+        await callback_query.answer(
+            f"✅ 已改为 {new_prefix}",
+            show_alert=True,
         )
+        await send_settings_menu(msg, user_id=user_id, edit=True)
 
-        await send_settings_menu(callback_query.message, user_id=user_id)
-
+    except asyncio.TimeoutError:
+        await callback_query.answer("⏰ 已超时", show_alert=True)
+        await send_settings_menu(msg, user_id=user_id, edit=True)
     except Exception as e:
-        await callback_query.message.reply(f"❌ 修改失败: {e}")
+        logger.error(f"修改前缀失败: {e}")
+        await callback_query.answer(f"❌ 修改失败: {e}", show_alert=True)
 
 
 # ==================== 普通用户功能 ====================
@@ -602,6 +645,8 @@ async def send_user_plugins_menu(target: tg.Message, user_id: int, rel_path: str
             await target.edit_text(text, reply_markup=keyboard)
         else:
             await target.reply(text, reply_markup=keyboard)
+    except tg.errors.MessageNotModified:
+        pass
     except Exception as e:
         logger.error(f"发送用户插件菜单失败: {e}")
 
