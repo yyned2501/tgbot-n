@@ -52,39 +52,57 @@ async_session = async_scoped_session(
     scopefunc=asyncio.current_task,
 )
 
-async def get_setting(key: str, default: str = "") -> str:
+async def get_setting(key: str, default: str = "", owner_id: int = 0) -> str:
     """
     获取系统设置
+    owner_id=0 为全局设置，>0 为按账号隔离的设置。
     """
     async with async_session() as session:
         try:
-            result = await session.execute(select(SystemSetting).where(SystemSetting.key == key))
+            result = await session.execute(
+                select(SystemSetting).where(
+                    SystemSetting.key == key,
+                    SystemSetting.owner_id == owner_id,
+                )
+            )
             setting = result.scalar_one_or_none()
             return setting.value if setting else default
         except Exception:
             return default
 
-async def set_setting(key: str, value: str):
+async def set_setting(key: str, value: str, owner_id: int = 0):
     """
     保存系统设置
+    owner_id=0 为全局设置，>0 为按账号隔离的设置。
     """
     async with async_session() as session:
         async with session.begin():
-            result = await session.execute(select(SystemSetting).where(SystemSetting.key == key))
+            result = await session.execute(
+                select(SystemSetting).where(
+                    SystemSetting.key == key,
+                    SystemSetting.owner_id == owner_id,
+                )
+            )
             setting = result.scalar_one_or_none()
             if setting:
                 setting.value = value
             else:
-                setting = SystemSetting(key=key, value=value)
+                setting = SystemSetting(key=key, value=value, owner_id=owner_id)
                 session.add(setting)
 
-async def delete_setting(key: str):
+async def delete_setting(key: str, owner_id: int = 0):
     """
     删除系统设置
+    owner_id=0 为全局设置，>0 为按账号隔离的设置。
     """
     async with async_session() as session:
         async with session.begin():
-            await session.execute(delete(SystemSetting).where(SystemSetting.key == key))
+            await session.execute(
+                delete(SystemSetting).where(
+                    SystemSetting.key == key,
+                    SystemSetting.owner_id == owner_id,
+                )
+            )
 
 async def migrate_from_sqlite():
     """
@@ -106,19 +124,23 @@ async def migrate_from_sqlite():
         async with sqlite_engine.connect() as sqlite_conn:
             # 1. 迁移 system_settings
             try:
-                result = await sqlite_conn.execute(text("SELECT key, value FROM system_settings"))
+                result = await sqlite_conn.execute(text("SELECT key, value, COALESCE(owner_id, 0) FROM system_settings"))
                 rows = result.all()
                 if rows:
                     async with async_session() as session:
                         async with session.begin():
-                            for key, value in rows:
-                                # Upsert 逻辑
-                                res = await session.execute(select(SystemSetting).where(SystemSetting.key == key))
+                            for key, value, owner_id in rows:
+                                res = await session.execute(
+                                    select(SystemSetting).where(
+                                        SystemSetting.key == key,
+                                        SystemSetting.owner_id == owner_id,
+                                    )
+                                )
                                 setting = res.scalar_one_or_none()
                                 if setting:
                                     setting.value = value
                                 else:
-                                    session.add(SystemSetting(key=key, value=value))
+                                    session.add(SystemSetting(key=key, value=value, owner_id=owner_id))
                     logger.info(f"已迁移 {len(rows)} 条系统设置。")
             except Exception as e:
                 logger.warning(f"迁移 system_settings 失败 (可能表不存在): {e}")
@@ -230,6 +252,17 @@ async def init_db():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("数据库表结构同步完成。")
+
+        # 迁移：为已有 system_settings 表添加 owner_id 列
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(
+                    "ALTER TABLE system_settings ADD COLUMN owner_id INTEGER NOT NULL DEFAULT 0"
+                ))
+            logger.info("system_settings owner_id 列迁移完成。")
+        except Exception:
+            # 列已存在或不支持 ALTER TABLE 时忽略
+            pass
 
         # 清理 zhuque_results 中的重复记录，然后创建唯一索引
         # （已有重复数据会阻止 CREATE UNIQUE INDEX，必须先清理）
