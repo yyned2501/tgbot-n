@@ -20,7 +20,7 @@ from scripts.notify import notify_owner
 BOT_ID = 8907007783              # 天空小秘 HDSKY（拼手气红包/转赠）
 _CLICKED_TTL = 3600              # 去重 TTL（秒）
 CLICK_DELAY = 0                  # 点击前等待秒数（可改为正数）
-ALLOWED_GROUPS: list[int] = []   # 限定群组（空=所有群），如 [-1001326208894]
+ALLOWED_GROUPS: list[int] = [-1001326208894]   # 限定群组（空=所有群），如 [-1001326208894]
 INACTIVE_WAIT = 10               # 最近20条无发言时需等待的秒数（天空新规）
 
 # ─── 去重缓存 ──────────────────────────────────────────
