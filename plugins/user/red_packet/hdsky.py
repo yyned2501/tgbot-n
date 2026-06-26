@@ -12,7 +12,7 @@ plugins/user/red_packet/hdsky.py
 """
 import asyncio
 import time
-from core import tg, app
+from core import tg, db, app
 from scripts.filters import create_bot_filter
 from scripts.notify import notify_owner
 
@@ -67,14 +67,21 @@ def _is_lucky_packet(message: tg.Message) -> bool:
 # ─── 自身发言追踪 Handler ────────────────────────────
 @tg.Client.on_message(tg.filters.group, group=-100)
 async def _track_self_message(client: tg.Client, message: tg.Message):
-    """追踪自己在 ALLOWED_GROUPS 中最后一次发言的 msg_id。"""
+    """追踪自己在 ALLOWED_GROUPS 中最后一次发言的 msg_id，写入数据库防重启丢失。"""
     owner_id = getattr(client, "_owner_id", 0)
     if not owner_id:
         return
     if ALLOWED_GROUPS and message.chat.id not in ALLOWED_GROUPS:
         return
     if message.from_user and message.from_user.is_self:
-        _last_self_msg_id[f"{owner_id}:{message.chat.id}"] = message.id
+        chat_id = message.chat.id
+        key = f"{owner_id}:{chat_id}"
+        _last_self_msg_id[key] = message.id
+        await db.set_setting(f"hdsky_last_msg:{chat_id}", str(message.id), owner_id=owner_id)
+        app.logger.info(
+            f"[天空红包] 记录自身发言 owner={owner_id} chat={chat_id} "
+            f"msg_id={message.id}"
+        )
 
 
 # ─── Handler ──────────────────────────────────────────
@@ -112,14 +119,30 @@ async def snatch_hdsky_red_packet(client: tg.Client, message: tg.Message):
     # 活跃度检查（天空新规：最近20条无发言 → 等10秒）
     if ALLOWED_GROUPS:
         act_key = f"{owner_id}:{message.chat.id}"
-        last_id = _last_self_msg_id.get(act_key, 0)
+        last_id = _last_self_msg_id.get(act_key)
+        # 内存没有则从数据库恢复（重启后）
+        if last_id is None:
+            db_val = await db.get_setting(f"hdsky_last_msg:{message.chat.id}", owner_id=owner_id)
+            if db_val:
+                try:
+                    last_id = int(db_val)
+                    _last_self_msg_id[act_key] = last_id  # 回填内存
+                except ValueError:
+                    last_id = 0
+            else:
+                last_id = 0
         gap = message.id - last_id
         if gap >= 20:
             app.logger.info(
                 f"[天空红包] msg_id 差={gap} >= 20，等待 {INACTIVE_WAIT}s 后抢包 "
-                f"chat={message.chat.id} msg={message.id}"
+                f"owner={owner_id} chat={message.chat.id} msg={message.id}"
             )
             await asyncio.sleep(INACTIVE_WAIT)
+        else:
+            app.logger.info(
+                f"[天空红包] msg_id 差={gap} < 20，活跃中，立即抢包 "
+                f"owner={owner_id} chat={message.chat.id} msg={message.id}"
+            )
 
     # 可配置延迟
     if CLICK_DELAY > 0:
