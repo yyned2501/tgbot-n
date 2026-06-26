@@ -65,7 +65,7 @@ def _is_lucky_packet(message: tg.Message) -> bool:
 
 
 # ─── 自身发言追踪 Handler ────────────────────────────
-@tg.Client.on_message(tg.filters.group, group=-100)
+@tg.Client.on_message(tg.filters.group & tg.filters.me, group=-100)
 async def _track_self_message(client: tg.Client, message: tg.Message):
     """追踪自己在 ALLOWED_GROUPS 中最后一次发言的 msg_id，写入数据库防重启丢失。"""
     owner_id = getattr(client, "_owner_id", 0)
@@ -73,15 +73,14 @@ async def _track_self_message(client: tg.Client, message: tg.Message):
         return
     if ALLOWED_GROUPS and message.chat.id not in ALLOWED_GROUPS:
         return
-    if message.from_user and message.from_user.is_self:
-        chat_id = message.chat.id
-        key = f"{owner_id}:{chat_id}"
-        _last_self_msg_id[key] = message.id
-        await db.set_setting(f"hdsky_last_msg:{chat_id}", str(message.id), owner_id=owner_id)
-        app.logger.info(
-            f"[天空红包] 记录自身发言 owner={owner_id} chat={chat_id} "
-            f"msg_id={message.id}"
-        )
+    chat_id = message.chat.id
+    key = f"{owner_id}:{chat_id}"
+    _last_self_msg_id[key] = message.id
+    await db.set_setting(f"hdsky_last_msg:{chat_id}", str(message.id), owner_id=owner_id)
+    app.logger.info(
+        f"[天空红包] 记录自身发言 owner={owner_id} chat={chat_id} "
+        f"msg_id={message.id}"
+    )
 
 
 # ─── Handler ──────────────────────────────────────────
