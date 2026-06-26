@@ -60,7 +60,7 @@ async def login_handler(client: tg.Client, message: tg.Message):
         return
 
     # 1. 询问手机号
-    ask_phone = await client.ask(
+    _, ask_phone = await client.ask(
         chat_id, "📱 请输入您的手机号 (带国家代码，例如 +861234567890):"
     )
     if not ask_phone or not ask_phone.text:
@@ -81,7 +81,7 @@ async def login_handler(client: tg.Client, message: tg.Message):
         phone_code_hash = code_info.phone_code_hash
 
         # 3. 询问验证码
-        ask_code = await client.ask(chat_id, "验证码已发送，请输入：")
+        _, ask_code = await client.ask(chat_id, "验证码已发送，请输入：")
         if not ask_code or not ask_code.text:
             await temp_client.disconnect()
             return
@@ -95,7 +95,7 @@ async def login_handler(client: tg.Client, message: tg.Message):
         except Exception as e:
             # 处理需要二次验证的情况
             if "SESSION_PASSWORD_NEEDED" in str(e):
-                ask_pwd = await client.ask(
+                _, ask_pwd = await client.ask(
                     chat_id, "🔐 检测到两步验证，请输入密码："
                 )
                 if not ask_pwd or not ask_pwd.text:

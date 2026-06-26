@@ -27,7 +27,7 @@ async def main():
         chat_id = message.chat.id
         
         # 1. 询问手机号
-        ask_phone = await client.ask(chat_id, "请输入你的手机号 (带国家代码，例如 +861234567890):")
+        _, ask_phone = await client.ask(chat_id, "请输入你的手机号 (带国家代码，例如 +861234567890):")
         phone_number = ask_phone.text.strip()
 
         try:
@@ -40,7 +40,7 @@ async def main():
             phone_code_hash = code_info.phone_code_hash
             
             # 3. 询问验证码
-            ask_code = await client.ask(chat_id, "验证码已发送，请输入：")
+            _, ask_code = await client.ask(chat_id, "验证码已发送，请输入：")
             verification_code = ask_code.text.strip()
 
             try:
@@ -49,7 +49,7 @@ async def main():
             except Exception as e:
                 # 处理需要二次验证的情况
                 if "SESSION_PASSWORD_NEEDED" in str(e):
-                    ask_pwd = await client.ask(chat_id, "检测到两步验证，请输入密码：")
+                    _, ask_pwd = await client.ask(chat_id, "检测到两步验证，请输入密码：")
                     password = ask_pwd.text.strip()
                     await temp_client.check_password(password)
                 else:
