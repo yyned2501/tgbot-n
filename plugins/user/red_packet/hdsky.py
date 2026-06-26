@@ -34,11 +34,6 @@ CLICK_DELAY = 0                  # 点击前等待秒数（可改为正数）
 ALLOWED_GROUPS: list[int] = [-1001326208894]   # 限定群组（空=所有群），如 [-1001326208894]
 INACTIVE_WAIT = 10               # 最近20条无发言时需等待的秒数（天空新规）
 
-# ─── 组合 filter ────────────────────────────────────────
-_base_filter = tg.filters.group
-if ALLOWED_GROUPS:
-    _base_filter = _base_filter & tg.filters.chat(ALLOWED_GROUPS)
-
 # ─── 去重缓存 ──────────────────────────────────────────
 _clicked: dict[str, float] = {}  # "owner_id:chat_id:msg_id" → timestamp
 
@@ -81,7 +76,7 @@ def _is_lucky_packet(message: tg.Message) -> bool:
 
 
 # ─── 自身发言追踪 Handler ────────────────────────────
-@tg.Client.on_message(_base_filter & self_filter, group=-9)
+@tg.Client.on_message(tg.filters.group & tg.filters.chat(ALLOWED_GROUPS) & self_filter, group=-9)
 async def track_self_message(client: tg.Client, message: tg.Message):
     """追踪自己在 ALLOWED_GROUPS 中最后一次发言的 msg_id，写入数据库防重启丢失。"""
     owner_id = getattr(client, "_owner_id", 0)
@@ -99,7 +94,8 @@ async def track_self_message(client: tg.Client, message: tg.Message):
 
 # ─── Handler ──────────────────────────────────────────
 @tg.Client.on_message(
-    _base_filter
+    tg.filters.group
+    & tg.filters.chat(ALLOWED_GROUPS)
     & create_bot_filter(BOT_ID),
     group=-9,
 )
