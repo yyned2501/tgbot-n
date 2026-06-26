@@ -16,6 +16,17 @@ from core import tg, db, app
 from scripts.filters import create_bot_filter
 from scripts.notify import notify_owner
 
+
+def _create_self_filter():
+    """创建「自己的发言」过滤器（等价 filters.me，但显式可控）。"""
+    async def is_self(_, __, m: tg.Message):
+        return bool(m.from_user and m.from_user.is_self)
+
+    return tg.filters.create(is_self)
+
+
+self_filter = _create_self_filter()
+
 # ─── 常量 ───────────────────────────────────────────────
 BOT_ID = 8907007783              # 天空小秘 HDSKY（拼手气红包/转赠）
 _CLICKED_TTL = 3600              # 去重 TTL（秒）
@@ -65,13 +76,21 @@ def _is_lucky_packet(message: tg.Message) -> bool:
 
 
 # ─── 自身发言追踪 Handler ────────────────────────────
-@tg.Client.on_message(tg.filters.group & tg.filters.me, group=-100)
+@tg.Client.on_message(tg.filters.group & self_filter, group=-100)
 async def _track_self_message(client: tg.Client, message: tg.Message):
     """追踪自己在 ALLOWED_GROUPS 中最后一次发言的 msg_id，写入数据库防重启丢失。"""
     owner_id = getattr(client, "_owner_id", 0)
+    app.logger.info(
+        f"[天空红包] _track_self_message 触发 owner={owner_id} "
+        f"chat={message.chat.id} msg={message.id}"
+    )
     if not owner_id:
+        app.logger.warning("[天空红包] _track_self_message 跳过：owner_id=0（Bot 账号）")
         return
     if ALLOWED_GROUPS and message.chat.id not in ALLOWED_GROUPS:
+        app.logger.warning(
+            f"[天空红包] _track_self_message 跳过：chat={message.chat.id} 不在 ALLOWED_GROUPS"
+        )
         return
     chat_id = message.chat.id
     key = f"{owner_id}:{chat_id}"
