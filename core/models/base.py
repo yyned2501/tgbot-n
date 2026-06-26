@@ -1,4 +1,5 @@
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import DeclarativeBase
 
-# 声明式基类
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
