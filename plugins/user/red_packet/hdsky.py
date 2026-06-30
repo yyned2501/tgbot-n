@@ -6,12 +6,19 @@ plugins/user/red_packet/hdsky.py
 消息含「拼手气红包」关键字，内联键盘有「抢红包」按钮，
 点击按钮抢红包。
 
-可配置项（模块级常量）：
-  - CLICK_DELAY: 点击前等待秒数（默认 0）
-  - ALLOWED_GROUPS: 限定群组 ID 列表（空 = 所有群）
+策略：
+1. 检测到拼手气红包 → 立即算 gap（先于任何 auto_msg，避免 auto_msg 污染 last_id）
+2. gap >= 阈值 → 不活跃，等待 x 秒后抢
+3. gap < 阈值 → 活跃，立即抢
+4. 可选：不活跃时自动发消息，拉近后续红包的活跃度
 
-新策略：监听 /red 指令 → 发「红包来了」→ 自身发言拉近 msg_id 差
-→ 拼手气红包到来时 gap 小，无需等待直接抢。
+可配置项（模块级常量）：
+  - AUTO_MSG: 监听 /red 指令时自动发送的文字（空=不发）
+  - AUTO_GAP: auto_msg 触发阈值（msg_id 差）
+  - INACTIVE_GAP: 不活跃阈值（msg_id 差）
+  - INACTIVE_DELAY: 不活跃时等待秒数
+  - CLICK_DELAY: 额外固定延迟秒数
+  - ALLOWED_GROUPS: 限定群组 ID 列表（空 = 所有群）
 """
 import asyncio
 import time
@@ -24,7 +31,6 @@ def _create_self_filter():
     """创建「自己的发言」过滤器（等价 filters.me，但显式可控）。"""
     async def is_self(_, __, m: tg.Message):
         return bool(m.from_user and m.from_user.is_self)
-
     return tg.filters.create(is_self)
 
 
@@ -33,9 +39,16 @@ self_filter = _create_self_filter()
 # ─── 常量 ───────────────────────────────────────────────
 BOT_ID = 8907007783              # 天空小秘 HDSKY（拼手气红包/转赠）
 _CLICKED_TTL = 3600              # 去重 TTL（秒）
-CLICK_DELAY = 0                  # 点击前等待秒数（可改为正数）
-ALLOWED_GROUPS: list[int] = [-1001326208894]   # 限定群组（空=所有群），如 [-1001326208894]
-INACTIVE_GAP = 20                # msg_id 差超过此值则认为不活跃
+ALLOWED_GROUPS: list[int] = [-1001326208894]   # 限定群组（空=所有群）
+
+# ─── 自动发言配置 ─────────────────────────────────────
+AUTO_MSG = "红包来了"               # /red 指令时自动发送的文字（空=不发）
+AUTO_GAP = 15                     # 自身 msg_id 差 >= 此值才发 auto_msg
+
+# ─── 延迟策略配置 ─────────────────────────────────────
+INACTIVE_GAP = 20                 # msg_id 差超过此值则认为不活跃
+INACTIVE_DELAY = 5                # 不活跃时等待秒数（0=不等待）
+CLICK_DELAY = 0                   # 额外固定延迟秒数
 
 # ─── 去重缓存 ──────────────────────────────────────────
 _clicked: dict[str, float] = {}  # "owner_id:chat_id:msg_id" → timestamp
@@ -60,7 +73,6 @@ def _find_snatch_button(message: tg.Message) -> tuple[int, int] | None:
     for r, row in enumerate(markup.inline_keyboard):
         for c, btn in enumerate(row):
             text = getattr(btn, "text", "") or ""
-            # 匹配「抢红包」「抢 红 包」「抢」「领取红包」等参与按钮文案
             if "抢红包" in text or "抢 红 包" in text or text.strip() in ("抢", "领取红包"):
                 return (r, c)
     return None
@@ -69,13 +81,28 @@ def _find_snatch_button(message: tg.Message) -> tuple[int, int] | None:
 def _is_lucky_packet(message: tg.Message) -> bool:
     """判断是否为拼手气红包消息。"""
     text = message.text or message.caption or ""
-    # 关键特征：拼手气红包
     if "拼手气红包" in text:
         return True
-    # 兜底：含「红包」且含份数/总银元/总金额
     if "红包" in text and ("份数" in text or "总银元" in text or "总金额" in text):
         return True
     return False
+
+
+async def _get_last_self_id(owner_id: int, chat_id: int) -> int:
+    """获取最近一次自身发言的 msg_id，优先读内存，回退读 db。"""
+    key = f"{owner_id}:{chat_id}"
+    last_id = _last_self_msg_id.get(key)
+    if last_id is not None:
+        return last_id
+    db_val = await db.get_setting(f"hdsky_last_msg:{chat_id}", owner_id=owner_id)
+    if db_val:
+        try:
+            last_id = int(db_val)
+            _last_self_msg_id[key] = last_id
+            return last_id
+        except ValueError:
+            pass
+    return 0
 
 
 # ─── 自身发言追踪 Handler ────────────────────────────
@@ -95,7 +122,7 @@ async def track_self_message(client: tg.Client, message: tg.Message):
     )
 
 
-# ─── /red 指令监听（新策略核心）──────────────────────
+# ─── /red 指令监听（发 auto_msg 拉近活跃度）──────────
 @tg.Client.on_message(
     tg.filters.group
     & tg.filters.chat(ALLOWED_GROUPS)
@@ -104,23 +131,42 @@ async def track_self_message(client: tg.Client, message: tg.Message):
     group=-9,
 )
 async def red_command_alert(client: tg.Client, message: tg.Message):
-    """监听用户发送的 /red 指令，发「红包来了」后立即删除。
-
-    发送消息会触发 track_self_message 更新 _last_self_msg_id，
-    缩小活跃度 gap，后续红包到来时无需等待直接抢。
-    """
+    """监听群友发送的 /red 指令，gap >= AUTO_GAP 时才发 auto_msg 拉近活跃度。"""
     owner_id = getattr(client, "_owner_id", 0)
     if not owner_id:
         return
 
+    auto_msg = (AUTO_MSG or "").strip()
+    if not auto_msg:
+        return
+
+    # 自身最近是否活跃：用 /red 指令的 msg_id 与最后自身发言算 gap
+    last_id = await _get_last_self_id(owner_id, message.chat.id)
+    gap = message.id - last_id
+    if gap < AUTO_GAP:
+        app.logger.debug(
+            f"[天空红包] 已活跃 gap={gap} < AUTO_GAP={AUTO_GAP}，跳过 auto_msg"
+        )
+        return
+
     try:
-        sent = await message.reply("红包来了")
+        sent = await client.send_message(message.chat.id, auto_msg)
+        # 手动更新 last_id，避免依赖 Pyrogram update loop 触发 track_self_message
+        key = f"{owner_id}:{message.chat.id}"
+        _last_self_msg_id[key] = sent.id
+        await db.set_setting(
+            f"hdsky_last_msg:{message.chat.id}", str(sent.id), owner_id=owner_id
+        )
         await sent.delete()
+        app.logger.info(
+            f"[天空红包] 已响应 /red 发送 auto_msg (gap={gap} >= AUTO_GAP={AUTO_GAP}) "
+            f"chat={message.chat.id} last_id={sent.id}"
+        )
     except Exception:
         pass
 
 
-# ─── Handler ──────────────────────────────────────────
+# ─── 抢红包 Handler ──────────────────────────────────
 @tg.Client.on_message(
     tg.filters.group
     & tg.filters.chat(ALLOWED_GROUPS)
@@ -129,7 +175,6 @@ async def red_command_alert(client: tg.Client, message: tg.Message):
 )
 async def snatch_hdsky_red_packet(client: tg.Client, message: tg.Message):
     """检测拼手气红包消息并点击「抢红包」按钮。"""
-    # 仅 userbot 处理（Bot 账号没有 _owner_id）
     owner_id = getattr(client, "_owner_id", 0)
     if not owner_id:
         return
@@ -149,33 +194,31 @@ async def snatch_hdsky_red_packet(client: tg.Client, message: tg.Message):
         return
     _clicked[key] = time.time()
 
-    # 活跃度日志（新策略：/red 监听提前发消息拉近 gap，无需等待）
-    if ALLOWED_GROUPS:
-        act_key = f"{owner_id}:{message.chat.id}"
-        last_id = _last_self_msg_id.get(act_key)
-        if last_id is None:
-            db_val = await db.get_setting(f"hdsky_last_msg:{message.chat.id}", owner_id=owner_id)
-            if db_val:
-                try:
-                    last_id = int(db_val)
-                    _last_self_msg_id[act_key] = last_id
-                except ValueError:
-                    last_id = 0
-            else:
-                last_id = 0
-        gap = message.id - last_id
-        if gap >= INACTIVE_GAP:
+    # ── 活跃度判定（先于任何 auto_msg，避免 last_id 被污染）──
+    last_id = await _get_last_self_id(owner_id, message.chat.id)
+    gap = message.id - last_id
+    is_inactive = gap >= INACTIVE_GAP
+
+    if is_inactive:
+        if INACTIVE_DELAY > 0:
             app.logger.info(
-                f"[天空红包] msg_id 差={gap} >= {INACTIVE_GAP}，"
-                f"owner={owner_id} chat={message.chat.id} msg={message.id}"
+                f"[天空红包] 不活跃 gap={gap} >= {INACTIVE_GAP}，"
+                f"等 {INACTIVE_DELAY}s 后抢 owner={owner_id} "
+                f"chat={message.chat.id} msg={message.id}"
             )
+            await asyncio.sleep(INACTIVE_DELAY)
         else:
             app.logger.info(
-                f"[天空红包] msg_id 差={gap} < {INACTIVE_GAP}，活跃中，"
+                f"[天空红包] 不活跃 gap={gap} >= {INACTIVE_GAP}，立即抢 "
                 f"owner={owner_id} chat={message.chat.id} msg={message.id}"
             )
+    else:
+        app.logger.info(
+            f"[天空红包] 活跃 gap={gap} < {INACTIVE_GAP}，立即抢 "
+            f"owner={owner_id} chat={message.chat.id} msg={message.id}"
+        )
 
-    # 可配置延迟
+    # 额外固定延迟
     if CLICK_DELAY > 0:
         await asyncio.sleep(CLICK_DELAY)
 
@@ -186,7 +229,10 @@ async def snatch_hdsky_red_packet(client: tg.Client, message: tg.Message):
     try:
         result = await message.click(x=col, y=row, timeout=10)
         result_text = getattr(result, "message", None) or str(result)
-        app.logger.info(f"[天空红包] 已点击抢红包 chat={message.chat.id} msg={message.id} 结果={result_text}")
+        app.logger.info(
+            f"[天空红包] 已点击抢红包 chat={message.chat.id} "
+            f"msg={message.id} 结果={result_text}"
+        )
 
         asyncio.create_task(
             notify_owner(

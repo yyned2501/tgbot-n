@@ -704,7 +704,7 @@ async def user_toggle_mod_handler(client: tg.Client, callback_query: tg.Callback
 
     enabled = await app.account_manager.toggle_module(user_id, module_name)
     await callback_query.answer(
-        f"已{'开启' if enabled else '禁用'}模块"
+        f"已{'开启' if enabled else '禁用'}模块，立即生效"
     )
 
     await send_user_plugins_menu(callback_query.message, user_id, rel_path=rel_path, edit=True)
@@ -739,9 +739,9 @@ async def user_bulk_toggle_handler(client: tg.Client, callback_query: tg.Callbac
 
     if action == "enable":
         await app.account_manager.enable_all_in_path(user_id, target_modules)
-        await callback_query.answer(f"已开启 {len(target_modules)} 个插件")
+        await callback_query.answer(f"已开启 {len(target_modules)} 个插件，立即生效")
     else:
         await app.account_manager.disable_all_in_path(user_id, target_modules)
-        await callback_query.answer(f"已禁用 {len(target_modules)} 个插件")
+        await callback_query.answer(f"已禁用 {len(target_modules)} 个插件，立即生效")
 
     await send_user_plugins_menu(callback_query.message, user_id, rel_path=rel_path, edit=True)

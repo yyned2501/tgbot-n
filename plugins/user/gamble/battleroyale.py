@@ -29,6 +29,7 @@ class BattleRoyaleState:
         self.target_msg_id = None
         self.round = 0
         self._task = None
+        self.user_vote_log = []     # [(圈数, 投的选项, 结果, 是否胜利)]
         L.info("[BR] __init__: 状态已初始化")
 
     def extract_deadline(self, text):
@@ -225,6 +226,16 @@ async def battleroyale_game_handler(client, message):
             _monitored_keywords.extend(state.options)
             L.info(f"[BR-game] 状态: round=1 options={state.options} deadline={state.deadline}")
 
+            # 推送游戏开始通知
+            opt_str = " / ".join(state.options)
+            dl_str = state.deadline.strftime("%H:%M") if state.deadline else "?"
+            await app.manager.send_bot_message(
+                f"⚔️ **大逃杀游戏开始!**\n"
+                f"🎯 选项: `{opt_str}`\n"
+                f"⏱ 首圈结算: {dl_str}",
+                target_id=NOTIFY_USER_ID,
+            )
+
             if state.deadline:
                 L.info(f"[BR-game] 启动倒计时任务")
                 state._task = asyncio.create_task(_countdown_loop())
@@ -240,6 +251,32 @@ async def battleroyale_game_handler(client, message):
             mut = "🧬" if "基因突变" in text else ""
             L.info(f"[BR-game] 🔄 结算! 第{state.round}圈 结果=「{result}」{mut}")
             L.info(f"[BR-game] 结算前投票: { {k:len(v) for k,v in state.votes.items()} }")
+
+            # 计算用户是否胜利
+            user_vote = None
+            for opt, voters in state.votes.items():
+                if NOTIFY_USER_ID in voters:
+                    user_vote = opt
+                    break
+
+            vote_detail = ", ".join(f"{k}={len(v)}" for k,v in sorted(state.votes.items(), key=lambda x:-len(x[1])))
+            is_win = False
+            if result != "?":
+                is_win = user_vote == result
+                win_icon = "✅" if is_win else "❌"
+                win_text = "胜利!" if is_win else "失败..."
+                user_line = f"👤 你投了: `{user_vote}` → {win_icon} **{win_text}**" if user_vote else "👤 你未投票"
+            else:
+                user_line = f"👤 你投了: `{user_vote}`" if user_vote else "👤 你未投票"
+            state.user_vote_log.append((state.round, user_vote or "-", result, is_win))
+
+            await app.manager.send_bot_message(
+                f"🔄 **第{state.round}圈结算** {mut}\n"
+                f"🎯 结果: `{result}`\n"
+                f"{user_line}\n"
+                f"📊 {vote_detail}",
+                target_id=NOTIFY_USER_ID,
+            )
 
             state.round += 1
             state.bet_placed = False
@@ -267,6 +304,22 @@ async def battleroyale_game_handler(client, message):
             L.info(f"[BR-game] 🏁 游戏结束! 共{state.round}圈. 最终投票: { {k:len(v) for k,v in state.votes.items()} }")
             state.is_active = False
             _monitored_keywords.clear()
+
+            # 统计用户的成绩
+            wins = sum(1 for _, _, _, w in state.user_vote_log if w)
+            total = len(state.user_vote_log)
+            played = sum(1 for _, v, _, _ in state.user_vote_log if v != "-")
+            summary_lines = "\n".join(
+                f"  • 第{r}圈: 「{v}」→「{res}」{'✅' if w else '❌'}"
+                for r, v, res, w in state.user_vote_log
+            )
+            await app.manager.send_bot_message(
+                f"🏁 **游戏结束!**\n"
+                f"🔄 共 {state.round} 圈 | 你参与了 {played} 圈\n"
+                f"📊 胜率: {wins}/{total} (其中未投票 {total - played} 圈自动计失败)\n"
+                f"{summary_lines}",
+                target_id=NOTIFY_USER_ID,
+            )
             state.__init__()
             return
 

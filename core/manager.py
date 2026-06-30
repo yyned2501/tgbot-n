@@ -141,10 +141,9 @@ class AppManager:
     def is_module_enabled(self, module_name: str) -> bool:
         """
         检查模块是否启用 (同步方法，兼容旧版)
-        注意：新版建议使用 account_manager.is_module_enabled(owner_id, module_name)
+        注意：新版在 _init_single_userbot 中通过过滤 plugins include 列表实现，
+        禁用的模块不会加载。此方法仅为兼容保留，始终返回 True。
         """
-        # 由于是同步方法，无法 await，直接返回 True
-        # 实际过滤逻辑在 add_handler 中处理
         return True
 
     async def enable_all_in_path(self, modules: List[str]):

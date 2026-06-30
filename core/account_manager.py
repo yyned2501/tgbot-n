@@ -29,8 +29,6 @@ class UserAccountManager:
     def __init__(self):
         # owner_id -> Client 实例
         self._accounts: Dict[int, Client] = {}
-        # 全局禁用模块列表 (对所有账号生效)
-        self._disabled_modules: Set[str] = set()
         # 全局指令前缀
         self._prefix: str = "."
 
@@ -43,10 +41,6 @@ class UserAccountManager:
     def account_count(self) -> int:
         """当前在线账号数量"""
         return len(self._accounts)
-
-    @property
-    def disabled_modules(self) -> Set[str]:
-        return self._disabled_modules
 
     @property
     def prefix(self) -> str:
@@ -108,7 +102,7 @@ class UserAccountManager:
 
     async def toggle_module(self, owner_id: int, module_name: str) -> bool:
         """
-        切换指定账号的模块启用状态
+        切换指定账号的模块启用状态，立即生效（无需重启）。
         返回: True 表示已启用, False 表示已禁用
         """
         disabled = await self.load_disabled_modules(owner_id)
@@ -119,6 +113,15 @@ class UserAccountManager:
             disabled.add(module_name)
             enabled = False
         await self.save_disabled_modules(owner_id, disabled)
+
+        # 立即在运行中的 Userbot 上生效
+        client = self._accounts.get(owner_id)
+        if client and client.is_connected:
+            if enabled:
+                client.register_module(module_name)
+            else:
+                client.unregister_module(module_name)
+
         logger.info(f"[{owner_id}] 模块 {module_name} 已{'启用' if enabled else '禁用'}")
         return enabled
 
@@ -128,21 +131,40 @@ class UserAccountManager:
         return module_name not in disabled
 
     async def enable_all_in_path(self, owner_id: int, modules: List[str]):
-        """批量启用指定账号的模块"""
+        """批量启用指定账号的模块，立即生效（无需重启）"""
         disabled = await self.load_disabled_modules(owner_id)
+        enabled_modules = []
         for mod in modules:
             if mod in disabled:
                 disabled.remove(mod)
+                enabled_modules.append(mod)
         await self.save_disabled_modules(owner_id, disabled)
-        logger.info(f"[{owner_id}] 已批量启用 {len(modules)} 个模块")
+
+        # 立即在运行中的 Userbot 上生效
+        client = self._accounts.get(owner_id)
+        if client and client.is_connected:
+            for mod in enabled_modules:
+                client.register_module(mod)
+
+        logger.info(f"[{owner_id}] 已批量启用 {len(enabled_modules)} 个模块")
 
     async def disable_all_in_path(self, owner_id: int, modules: List[str]):
-        """批量禁用指定账号的模块"""
+        """批量禁用指定账号的模块，立即生效（无需重启）"""
         disabled = await self.load_disabled_modules(owner_id)
+        disabled_modules = []
         for mod in modules:
-            disabled.add(mod)
+            if mod not in disabled:
+                disabled.add(mod)
+                disabled_modules.append(mod)
         await self.save_disabled_modules(owner_id, disabled)
-        logger.info(f"[{owner_id}] 已批量禁用 {len(modules)} 个模块")
+
+        # 立即在运行中的 Userbot 上生效
+        client = self._accounts.get(owner_id)
+        if client and client.is_connected:
+            for mod in disabled_modules:
+                client.unregister_module(mod)
+
+        logger.info(f"[{owner_id}] 已批量禁用 {len(disabled_modules)} 个模块")
 
     # ==================== 指令前缀 (按账号隔离) ====================
 
@@ -190,13 +212,35 @@ class UserAccountManager:
         return modules
 
     def _init_single_userbot(
-        self, owner_id: int, session_string: str, phone: str
+        self, owner_id: int, session_string: str, phone: str,
+        disabled_modules: set = None,
     ) -> Client:
         """
         初始化单个 Userbot Client 实例
         使用 phone 作为 Client 名称，便于区分
+
+        Args:
+            disabled_modules: 禁用的模块集合（如 {"plugins.user.foo", "plugins.user.bar"}），
+                              这些模块不会被加载，其 handler 不会注册。
         """
         user_plugin_modules = self._get_user_plugin_modules()
+
+        # 过滤禁用的模块：将 "plugins.user.X" 转为 "user.X" 以匹配 include 列表格式
+        if disabled_modules:
+            disabled_short = {
+                m.replace("plugins.", "") for m in disabled_modules
+                if m.startswith("plugins.")
+            }
+            before = len(user_plugin_modules)
+            user_plugin_modules = [
+                m for m in user_plugin_modules if m not in disabled_short
+            ]
+            skipped = before - len(user_plugin_modules)
+            if skipped:
+                logger.info(
+                    f"[{owner_id}] 已跳过 {skipped} 个禁用模块: "
+                    f"{sorted(disabled_short & {m.replace('plugins.', '') for m in disabled_modules})}"
+                )
 
         # 使用 phone 作为 Client 名称（如果 phone 是 "migrated" 则用 owner_id）
         client_name = phone if phone and phone != "migrated" else f"user_{owner_id}"
@@ -230,7 +274,11 @@ class UserAccountManager:
             return True
 
         try:
-            client = self._init_single_userbot(owner_id, session_string, phone)
+            # 加载禁用模块列表，在初始化时过滤，禁用的模块不注册 handler
+            disabled_modules = await self.load_disabled_modules(owner_id)
+            client = self._init_single_userbot(
+                owner_id, session_string, phone, disabled_modules
+            )
             logger.info(f"[{owner_id}] 正在启动 Userbot...")
             await client.start()
 
