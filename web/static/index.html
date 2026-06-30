@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>tgbot-n 控制面板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 800: '#1e1e2e', 900: '#11111b', 700: '#313244', 600: '#45475a' },
+                        accent: { DEFAULT: '#89b4fa', dim: '#74c7ec' },
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        .tab-active { color: #89b4fa; border-bottom: 2px solid #89b4fa; }
+        .fade-in { animation: fadeIn 0.2s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .slider-value { min-width: 3rem; text-align: center; }
+        input[type="range"] { -webkit-appearance: none; background: #45475a; border-radius: 4px; height: 6px; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #89b4fa; cursor: pointer; }
+        .log-entry { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.8rem; }
+        .toast { animation: slideUp 0.3s ease-out; }
+        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    </style>
+</head>
+<body class="bg-dark-900 text-gray-200 min-h-screen">
+
+<!-- Login Screen -->
+<div id="login-screen" class="min-h-screen flex flex-col items-center justify-center px-4">
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-white mb-2">tgbot-n</h1>
+        <p class="text-gray-400">Web 控制面板</p>
+    </div>
+    <div id="tg-login-btn"></div>
+    <p id="login-error" class="text-red-400 mt-4 text-sm hidden"></p>
+</div>
+
+<!-- Main App -->
+<div id="main-app" class="hidden min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="bg-dark-800 border-b border-dark-700 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+        <div class="flex items-center gap-2">
+            <span class="text-lg font-bold text-white">tgbot-n</span>
+            <span id="header-badge" class="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full"></span>
+        </div>
+        <div class="flex items-center gap-3">
+            <span id="user-name" class="text-sm text-gray-400"></span>
+            <button onclick="logout()" class="text-xs text-gray-500 hover:text-red-400 transition">退出</button>
+        </div>
+    </header>
+
+    <!-- Tab Bar -->
+    <nav class="bg-dark-800 border-b border-dark-700 flex sticky top-[52px] z-40">
+        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="flex-1 py-3 text-sm font-medium text-center transition tab-active">概览</button>
+        <button onclick="switchTab('plugins')" id="tab-plugins" class="flex-1 py-3 text-sm font-medium text-center transition text-gray-400 hover:text-gray-200">插件</button>
+        <button onclick="switchTab('accounts')" id="tab-accounts" class="flex-1 py-3 text-sm font-medium text-center transition text-gray-400 hover:text-gray-200">账号</button>
+        <button onclick="switchTab('logs')" id="tab-logs" class="flex-1 py-3 text-sm font-medium text-center transition text-gray-400 hover:text-gray-200">日志</button>
+    </nav>
+
+    <!-- Content Area -->
+    <main class="flex-1 p-4 overflow-y-auto">
+        <!-- Dashboard -->
+        <div id="page-dashboard" class="fade-in space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-dark-800 rounded-xl p-4">
+                    <div class="text-2xl font-bold text-white" id="stat-accounts">-</div>
+                    <div class="text-xs text-gray-400 mt-1">在线账号</div>
+                </div>
+                <div class="bg-dark-800 rounded-xl p-4">
+                    <div class="text-2xl font-bold" id="stat-bot">-</div>
+                    <div class="text-xs text-gray-400 mt-1">Bot 状态</div>
+                </div>
+            </div>
+            <div class="bg-dark-800 rounded-xl p-4">
+                <h3 class="text-sm font-medium text-gray-400 mb-3">系统信息</h3>
+                <div class="space-y-2 text-sm" id="sys-info"></div>
+            </div>
+            <div class="bg-dark-800 rounded-xl p-4">
+                <h3 class="text-sm font-medium text-gray-400 mb-3">在线账号</h3>
+                <div id="dash-accounts" class="space-y-2"></div>
+            </div>
+        </div>
+
+        <!-- Plugins -->
+        <div id="page-plugins" class="hidden fade-in">
+            <!-- Plugin List -->
+            <div id="plugin-list" class="space-y-2 mb-4"></div>
+            <!-- Plugin Config Panel -->
+            <div id="plugin-config-panel" class="hidden">
+                <button onclick="closePluginConfig()" class="text-sm text-gray-400 hover:text-white mb-3 flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                    返回插件列表
+                </button>
+                <div id="plugin-config-header" class="mb-4"></div>
+                <!-- Account Selector (owner only) -->
+                <div id="account-selector" class="mb-4 hidden">
+                    <label class="text-xs text-gray-400 mb-1 block">配置目标</label>
+                    <select id="config-account-id" onchange="loadPluginConfig()" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white">
+                        <option value="0">全局默认</option>
+                    </select>
+                </div>
+                <div id="plugin-config-form" class="space-y-4"></div>
+                <div class="flex gap-3 mt-6">
+                    <button onclick="savePluginConfig()" class="flex-1 bg-accent text-dark-900 font-medium py-2.5 rounded-xl hover:opacity-90 transition">保存配置</button>
+                    <button onclick="resetPluginConfig()" class="px-4 py-2.5 bg-dark-700 text-gray-400 rounded-xl hover:bg-dark-600 transition text-sm">恢复默认</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Accounts -->
+        <div id="page-accounts" class="hidden fade-in space-y-3">
+            <div id="accounts-list"></div>
+        </div>
+
+        <!-- Logs -->
+        <div id="page-logs" class="hidden fade-in">
+            <div class="flex items-center gap-2 mb-3">
+                <select id="log-level" onchange="loadLogs()" class="bg-dark-700 border border-dark-600 rounded-lg px-3 py-1.5 text-sm text-white">
+                    <option value="">全部级别</option>
+                    <option value="INFO">INFO</option>
+                    <option value="WARNING">WARNING</option>
+                    <option value="ERROR">ERROR</option>
+                    <option value="DEBUG">DEBUG</option>
+                </select>
+                <button onclick="loadLogs()" class="bg-dark-700 hover:bg-dark-600 px-3 py-1.5 rounded-lg text-sm transition">刷新</button>
+                <label class="flex items-center gap-1 text-xs text-gray-400 ml-auto">
+                    <input type="checkbox" id="log-auto-refresh" checked onchange="toggleAutoRefresh()" class="rounded">
+                    自动刷新
+                </label>
+            </div>
+            <div id="log-container" class="bg-dark-800 rounded-xl p-3 max-h-[60vh] overflow-y-auto space-y-0.5 font-mono text-xs"></div>
+        </div>
+    </main>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 hidden z-50">
+    <div class="bg-dark-700 border border-dark-600 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm toast"></div>
+</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────
+let state = {
+    token: null,
+    user: null,
+    plugins: [],
+    currentPlugin: null,
+    currentConfig: {},
+    accounts: [],
+    logTimer: null,
+};
+
+// ─── API Helper ─────────────────────────────────────────
+async function api(path, opts = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
+    const res = await fetch(`/api${path}`, { ...opts, headers });
+    if (res.status === 401) { logout(); throw new Error('未登录'); }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '请求失败');
+    return data;
+}
+
+// ─── Toast ──────────────────────────────────────────────
+function showToast(msg, type = 'info') {
+    const el = document.getElementById('toast');
+    const colors = { info: 'border-accent', success: 'border-green-500', error: 'border-red-500' };
+    el.querySelector('div').textContent = msg;
+    el.querySelector('div').className = `bg-dark-700 border ${colors[type] || colors.info} text-white px-4 py-2.5 rounded-xl shadow-lg text-sm toast`;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 2500);
+}
+
+// ─── Auth ───────────────────────────────────────────────
+function initLogin() {
+    const saved = localStorage.getItem('tgbot_token');
+    if (saved) {
+        state.token = saved;
+        api('/auth/me').then(u => { state.user = u; showApp(); }).catch(() => {
+            localStorage.removeItem('tgbot_token');
+            renderLoginButton();
+        });
+        return;
+    }
+    renderLoginButton();
+}
+
+async function renderLoginButton() {
+    const container = document.getElementById('tg-login-btn');
+    container.innerHTML = '<p class="text-gray-500 text-sm">加载中...</p>';
+
+    try {
+        const res = await fetch('/api/auth/info');
+        const info = await res.json();
+        const botUsername = info.bot_username || '';
+
+        if (!botUsername) {
+            container.innerHTML = `
+                <div class="text-center">
+                    <p class="text-yellow-400 text-sm mb-4">⚠️ Bot 用户名未配置</p>
+                    <p class="text-gray-500 text-xs">请在 config.toml 的 [web] 中设置 bot_username</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = '';
+        const script = document.createElement('script');
+        script.src = 'https://telegram.org/js/telegram-widget.js?22';
+        script.setAttribute('data-telegram-login', botUsername);
+        script.setAttribute('data-size', 'large');
+        script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+        script.setAttribute('data-request-access', 'write');
+        container.appendChild(script);
+    } catch (e) {
+        container.innerHTML = '<p class="text-red-400 text-sm">无法连接服务器</p>';
+    }
+}
+
+window.onTelegramAuth = async function(tgUser) {
+    try {
+        const data = await api('/auth/telegram', { method: 'POST', body: JSON.stringify(tgUser) });
+        state.token = data.token;
+        state.user = data.user;
+        localStorage.setItem('tgbot_token', data.token);
+        showApp();
+    } catch (e) {
+        const errEl = document.getElementById('login-error');
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+    }
+};
+
+function showApp() {
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('main-app').classList.remove('hidden');
+    document.getElementById('user-name').textContent = state.user.first_name || state.user.username;
+    document.getElementById('header-badge').textContent = state.user.is_owner ? 'Owner' : 'User';
+    loadDashboard();
+}
+
+function logout() {
+    state.token = null;
+    state.user = null;
+    localStorage.removeItem('tgbot_token');
+    document.getElementById('login-screen').classList.remove('hidden');
+    document.getElementById('main-app').classList.add('hidden');
+    renderLoginButton();
+}
+
+// ─── Tab Switching ──────────────────────────────────────
+function switchTab(tab) {
+    ['dashboard', 'plugins', 'accounts', 'logs'].forEach(t => {
+        document.getElementById(`page-${t}`).classList.toggle('hidden', t !== tab);
+        const btn = document.getElementById(`tab-${t}`);
+        btn.classList.toggle('tab-active', t === tab);
+        btn.classList.toggle('text-gray-400', t !== tab);
+    });
+    if (tab === 'dashboard') loadDashboard();
+    else if (tab === 'plugins') loadPlugins();
+    else if (tab === 'accounts') loadAccounts();
+    else if (tab === 'logs') { loadLogs(); startAutoRefresh(); }
+}
+
+// ─── Dashboard ──────────────────────────────────────────
+async function loadDashboard() {
+    try {
+        const s = await api('/system/status');
+        document.getElementById('stat-accounts').textContent = s.account_count;
+        const botEl = document.getElementById('stat-bot');
+        botEl.textContent = s.bot_connected ? '在线' : '离线';
+        botEl.className = `text-2xl font-bold ${s.bot_connected ? 'text-green-400' : 'text-red-400'}`;
+
+        document.getElementById('sys-info').innerHTML = `
+            <div class="flex justify-between"><span class="text-gray-400">Owner ID</span><span>${s.owner_id || '未设置'}</span></div>
+            <div class="flex justify-between"><span class="text-gray-400">指令前缀</span><span class="font-mono">${s.prefix}</span></div>
+        `;
+
+        document.getElementById('dash-accounts').innerHTML = s.accounts.length === 0
+            ? '<p class="text-gray-500 text-sm">无在线账号</p>'
+            : s.accounts.map(a => `
+                <div class="flex items-center gap-3 bg-dark-700 rounded-lg p-3">
+                    <div class="w-2 h-2 rounded-full ${a.is_connected ? 'bg-green-400' : 'bg-red-400'}"></div>
+                    <div class="flex-1">
+                        <div class="text-sm font-medium">${a.first_name || a.username}</div>
+                        <div class="text-xs text-gray-400">@${a.username} · ${a.owner_id}</div>
+                    </div>
+                </div>
+            `).join('');
+    } catch (e) { console.error(e); }
+}
+
+// ─── Plugins ────────────────────────────────────────────
+async function loadPlugins() {
+    try {
+        const data = await api('/plugins');
+        state.plugins = data.plugins;
+        document.getElementById('plugin-list').innerHTML = state.plugins.map(p => `
+            <button onclick="openPluginConfig('${p.id}')" class="w-full bg-dark-800 hover:bg-dark-700 rounded-xl p-4 flex items-center gap-3 transition text-left">
+                <span class="text-2xl">${p.icon}</span>
+                <div class="flex-1 min-w-0">
+                    <div class="font-medium text-white">${p.name}</div>
+                    <div class="text-xs text-gray-400 truncate">${p.description}</div>
+                </div>
+                <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </button>
+        `).join('');
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function openPluginConfig(pluginId) {
+    try {
+        const schema = await api(`/plugins/${pluginId}/schema`);
+        state.currentPlugin = schema;
+
+        document.getElementById('plugin-list').classList.add('hidden');
+        document.getElementById('plugin-config-panel').classList.remove('hidden');
+
+        document.getElementById('plugin-config-header').innerHTML = `
+            <div class="flex items-center gap-3 mb-2">
+                <span class="text-3xl">${schema.icon}</span>
+                <div>
+                    <h2 class="text-lg font-bold text-white">${schema.name}</h2>
+                    <p class="text-xs text-gray-400">${schema.description}</p>
+                </div>
+            </div>
+        `;
+
+        // Account selector for owner
+        if (state.user.is_owner) {
+            const sel = document.getElementById('account-selector');
+            sel.classList.remove('hidden');
+            const accounts = (await api('/accounts')).accounts;
+            state.accounts = accounts;
+            const select = document.getElementById('config-account-id');
+            select.innerHTML = '<option value="0">全局默认</option>' +
+                accounts.map(a => `<option value="${a.owner_id}">${a.first_name || a.username} (${a.owner_id})</option>`).join('');
+        } else {
+            document.getElementById('account-selector').classList.add('hidden');
+        }
+
+        await loadPluginConfig();
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+function closePluginConfig() {
+    document.getElementById('plugin-list').classList.remove('hidden');
+    document.getElementById('plugin-config-panel').classList.add('hidden');
+    state.currentPlugin = null;
+}
+
+async function loadPluginConfig() {
+    if (!state.currentPlugin) return;
+    const accountId = state.user.is_owner ? (document.getElementById('config-account-id')?.value || 0) : state.user.id;
+    try {
+        const data = await api(`/plugins/${state.currentPlugin.id}/config?account_id=${accountId}`);
+        state.currentConfig = data.config;
+        renderConfigForm();
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+function renderConfigForm() {
+    const schema = state.currentPlugin;
+    if (!schema || !schema.fields) return;
+
+    // Group by section
+    const sections = {};
+    schema.fields.forEach(f => {
+        const sec = f.section || '通用';
+        if (!sections[sec]) sections[sec] = [];
+        sections[sec].push(f);
+    });
+
+    const container = document.getElementById('plugin-config-form');
+    container.innerHTML = Object.entries(sections).map(([sec, fields]) => `
+        <div class="bg-dark-800 rounded-xl p-4">
+            <h3 class="text-sm font-medium text-gray-400 mb-3">${sec}</h3>
+            <div class="space-y-4">
+                ${fields.map(f => renderField(f)).join('')}
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderField(field) {
+    const val = state.currentConfig[field.key] ?? field.default;
+    const help = field.help ? `<p class="text-xs text-gray-500 mt-1">${field.help}</p>` : '';
+
+    if (field.type === 'string') {
+        return `
+            <div>
+                <label class="text-sm text-gray-300 block mb-1">${field.label}</label>
+                <input type="text" id="cfg-${field.key}" value="${escHtml(String(val))}"
+                    class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:border-accent focus:outline-none transition"
+                    onchange="updateConfig('${field.key}', this.value)">
+                ${help}
+            </div>
+        `;
+    }
+    if (field.type === 'textarea') {
+        return `
+            <div>
+                <label class="text-sm text-gray-300 block mb-1">${field.label}</label>
+                <textarea id="cfg-${field.key}" rows="3"
+                    class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:border-accent focus:outline-none transition"
+                    onchange="updateConfig('${field.key}', this.value)">${escHtml(String(val))}</textarea>
+                ${help}
+            </div>
+        `;
+    }
+    if (field.type === 'slider') {
+        return `
+            <div>
+                <label class="text-sm text-gray-300 flex justify-between mb-2">
+                    <span>${field.label}</span>
+                    <span class="slider-value font-mono text-accent" id="val-${field.key}">${val}</span>
+                </label>
+                <input type="range" id="cfg-${field.key}" min="${field.min}" max="${field.max}" step="${field.step}" value="${val}"
+                    class="w-full"
+                    oninput="document.getElementById('val-${field.key}').textContent=this.value"
+                    onchange="updateConfig('${field.key}', parseInt(this.value))">
+                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>${field.min}</span><span>${field.max}</span>
+                </div>
+                ${help}
+            </div>
+        `;
+    }
+    if (field.type === 'boolean') {
+        return `
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-sm text-gray-300">${field.label}</div>
+                    ${help}
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="cfg-${field.key}" ${val ? 'checked' : ''}
+                        class="sr-only peer" onchange="updateConfig('${field.key}', this.checked)">
+                    <div class="w-11 h-6 bg-dark-600 peer-checked:bg-accent rounded-full peer-focus:ring-2 peer-focus:ring-accent/50 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                </label>
+            </div>
+        `;
+    }
+    return '';
+}
+
+function updateConfig(key, value) {
+    state.currentConfig[key] = value;
+}
+
+async function savePluginConfig() {
+    if (!state.currentPlugin) return;
+    const accountId = state.user.is_owner ? (document.getElementById('config-account-id')?.value || 0) : state.user.id;
+    try {
+        await api(`/plugins/${state.currentPlugin.id}/config?account_id=${accountId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ values: state.currentConfig }),
+        });
+        showToast('配置已保存', 'success');
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function resetPluginConfig() {
+    if (!state.currentPlugin) return;
+    if (!confirm('确定恢复默认配置？当前配置将被清除。')) return;
+    const accountId = state.user.is_owner ? (document.getElementById('config-account-id')?.value || 0) : state.user.id;
+    try {
+        await api(`/plugins/${state.currentPlugin.id}/config?account_id=${accountId}`, { method: 'DELETE' });
+        showToast('已恢复默认', 'success');
+        loadPluginConfig();
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+// ─── Accounts ───────────────────────────────────────────
+async function loadAccounts() {
+    try {
+        const data = await api('/accounts');
+        const container = document.getElementById('accounts-list');
+        if (data.accounts.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-center py-8">无在线账号</p>';
+            return;
+        }
+        container.innerHTML = data.accounts.map(a => `
+            <div class="bg-dark-800 rounded-xl p-4 mb-3">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-3 h-3 rounded-full ${a.is_connected ? 'bg-green-400' : 'bg-red-400'}"></div>
+                    <div class="flex-1">
+                        <div class="font-medium text-white">${a.first_name || a.username}</div>
+                        <div class="text-xs text-gray-400">@${a.username} · ID: ${a.owner_id}</div>
+                    </div>
+                    ${state.user.is_owner ? `
+                        <button onclick="restartAccount(${a.owner_id})" class="text-xs bg-dark-700 hover:bg-dark-600 px-3 py-1.5 rounded-lg transition">重启</button>
+                    ` : ''}
+                </div>
+                ${state.user.is_owner ? `
+                    <details class="mt-2">
+                        <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-200">插件管理</summary>
+                        <div id="modules-${a.owner_id}" class="mt-2 space-y-1"></div>
+                    </details>
+                ` : ''}
+            </div>
+        `).join('');
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function restartAccount(ownerId) {
+    if (!confirm(`确定重启账号 ${ownerId} 的 Userbot？`)) return;
+    try {
+        await api(`/accounts/${ownerId}/restart`, { method: 'POST' });
+        showToast('重启指令已发送', 'success');
+        setTimeout(loadAccounts, 2000);
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+// ─── Logs ───────────────────────────────────────────────
+async function loadLogs() {
+    try {
+        const level = document.getElementById('log-level').value;
+        const data = await api(`/logs?limit=200${level ? `&level=${level}` : ''}`);
+        const container = document.getElementById('log-container');
+        const colors = { INFO: 'text-gray-300', WARNING: 'text-yellow-400', ERROR: 'text-red-400', DEBUG: 'text-gray-500' };
+        container.innerHTML = data.logs.map(l =>
+            `<div class="log-entry ${colors[l.level] || 'text-gray-300'}">${escHtml(l.time)} <span class="text-gray-600">[${escHtml(l.module)}]</span> ${escHtml(l.message)}</div>`
+        ).join('') || '<p class="text-gray-500 text-center py-4">暂无日志</p>';
+        container.scrollTop = container.scrollHeight;
+    } catch (e) { console.error(e); }
+}
+
+function startAutoRefresh() {
+    if (state.logTimer) clearInterval(state.logTimer);
+    state.logTimer = setInterval(() => {
+        if (document.getElementById('log-auto-refresh')?.checked && !document.getElementById('page-logs').classList.contains('hidden')) {
+            loadLogs();
+        }
+    }, 3000);
+}
+
+function toggleAutoRefresh() {
+    if (!document.getElementById('log-auto-refresh')?.checked && state.logTimer) {
+        clearInterval(state.logTimer);
+        state.logTimer = null;
+    } else {
+        startAutoRefresh();
+    }
+}
+
+// ─── Utils ──────────────────────────────────────────────
+function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+// ─── Init ───────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', initLogin);
+</script>
+</body>
+</html>
