@@ -42,7 +42,7 @@ class WebLogHandler(logging.Handler):
 
 # 注册日志 handler
 _handler = WebLogHandler()
-_handler.setFormatter(logging.Formatter("%H:%M:%S"))
+_handler.setFormatter(logging.Formatter("%(asctime)s", datefmt="%H:%M:%S"))
 logger.addHandler(_handler)
 
 
