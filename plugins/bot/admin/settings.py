@@ -21,7 +21,7 @@ async def settings_handler(client: tg.Client, message: tg.Message):
     """
     显示个人设置菜单 (所有绑定用户可访问)
     """
-    asyncio.create_task(tg.delete_later(message))
+    tg.delete_later(message)
 
     user_id = message.from_user.id
 
@@ -39,7 +39,7 @@ async def admin_handler(client: tg.Client, message: tg.Message):
     """
     显示管理员面板 (仅 Bot Owner)
     """
-    asyncio.create_task(tg.delete_later(message))
+    tg.delete_later(message)
 
     if message.from_user.id != app.manager.owner_id:
         await message.reply("❌ 您没有权限执行此操作。")
@@ -128,7 +128,7 @@ async def accounts_handler(client: tg.Client, message: tg.Message, user_id: int 
     参数:
         user_id: 可选，显式指定用户 ID（用于从回调进入时传入真实用户 ID）
     """
-    asyncio.create_task(tg.delete_later(message))
+    tg.delete_later(message)
 
     # 优先使用传入的 user_id，否则从消息中获取
     # 注意：从回调进入时，message 是 Bot 发送的消息，from_user 是 Bot 自身
@@ -264,7 +264,7 @@ async def logout_command_handler(client: tg.Client, message: tg.Message):
     普通用户解绑自己的账号
     Bot Owner 可以通过 /accounts 管理所有账号
     """
-    asyncio.create_task(tg.delete_later(message))
+    tg.delete_later(message)
 
     user_id = message.from_user.id
 

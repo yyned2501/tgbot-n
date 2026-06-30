@@ -9,17 +9,29 @@ from pyrogram.types import (
 )
 
 
-async def delete_later(message: Message, delay: int = 60):
+def delete_later(message: Message, delay: int = 60) -> asyncio.Task:
+    """异步定时删除消息（内部自动 create_task，调用方无需再包一层）。
+
+    用法:
+        tg.delete_later(message)          # 60 秒后删除
+        tg.delete_later(message, delay=5)  # 5 秒后删除
+
+    Args:
+        message: 要删除的消息对象。
+        delay: 延迟秒数，默认 60。
+
+    Returns:
+        asyncio.Task: 后台删除任务的引用。
     """
-    异步延迟删除消息
-    """
-    if not message:
-        return
-    await asyncio.sleep(delay)
-    try:
-        await message.delete()
-    except Exception:
-        pass
+    async def _do_delete():
+        if not message:
+            return
+        await asyncio.sleep(delay)
+        try:
+            await message.delete()
+        except Exception:
+            pass
+    return asyncio.create_task(_do_delete())
 
 
 def user_command(commands, prefixes=None):

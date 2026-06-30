@@ -8,7 +8,7 @@ from core import tg, app
 @tg.Client.bot_command("status", "查看运行状态")
 async def status_handler(client: tg.Client, message: tg.Message):
     """显示当前用户的系统运行状态"""
-    asyncio.create_task(tg.delete_later(message))
+    tg.delete_later(message)
 
     user_id = message.from_user.id
     is_owner = user_id == app.manager.owner_id
@@ -55,7 +55,7 @@ async def status_handler(client: tg.Client, message: tg.Message):
 @tg.Client.bot_command("help", "显示帮助信息")
 async def help_handler(client: tg.Client, message: tg.Message):
     """显示 Bot 帮助信息（所有用户可访问）"""
-    asyncio.create_task(tg.delete_later(message))
+    tg.delete_later(message)
 
     text = (
         "🤖 **人形脚本 - 帮助菜单**\n\n"
@@ -78,7 +78,7 @@ async def help_handler(client: tg.Client, message: tg.Message):
 @tg.Client.bot_command("userhelp", "查看 Userbot 功能汇总")
 async def userhelp_handler(client: tg.Client, message: tg.Message):
     """显示 Userbot 插件功能汇总（所有用户可访问）"""
-    asyncio.create_task(tg.delete_later(message))
+    tg.delete_later(message)
 
     plugins_info = app.manager.get_user_plugin_info()
 

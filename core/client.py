@@ -48,6 +48,30 @@ class Client(PyrogramClient):
             group=-100
         )
 
+    def delete_later(self, message: "Message", delay: int = 60) -> asyncio.Task:
+        """异步定时删除消息（内部自动 create_task，调用方无需再包一层）。
+
+        用法:
+            client.delete_later(message)          # 60 秒后删除
+            client.delete_later(message, delay=5)  # 5 秒后删除
+
+        Args:
+            message: 要删除的消息对象。
+            delay: 延迟秒数，默认 60。
+
+        Returns:
+            asyncio.Task: 后台删除任务的引用。
+        """
+        async def _do_delete():
+            if not message:
+                return
+            await asyncio.sleep(delay)
+            try:
+                await message.delete()
+            except Exception:
+                pass
+        return asyncio.create_task(_do_delete())
+
     async def stop(self, block: bool = True, clear_handlers: bool = True):
         """
         安全的停止方法：等待进行中的 handle_updates 完成后再关闭 storage。

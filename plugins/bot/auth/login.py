@@ -20,7 +20,7 @@ from core.logger import logger
 @tg.Client.bot_command("start", "开始交互", filters=tg.filters.private)
 async def start_handler(client: tg.Client, message: tg.Message):
     """处理 /start 命令"""
-    asyncio.create_task(tg.delete_later(message))
+    tg.delete_later(message)
 
     # 检查是否已绑定账号
     user_id = message.from_user.id if message.from_user else 0
@@ -41,7 +41,7 @@ async def start_handler(client: tg.Client, message: tg.Message):
 @tg.Client.bot_command("login", "登录 Userbot", filters=tg.filters.private)
 async def login_handler(client: tg.Client, message: tg.Message):
     """处理 /login 命令 - 多账号登录流程"""
-    asyncio.create_task(tg.delete_later(message))
+    tg.delete_later(message)
 
     user_id = message.from_user.id if message.from_user else 0
     if not user_id:
